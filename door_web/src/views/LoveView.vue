@@ -302,7 +302,7 @@ onMounted(() => {
   // 图片轮播间隔
   interval = setInterval(() => {
     currentImageIndex.value = (currentImageIndex.value + 1) % images.length;
-  }, 5000);
+  }, 10000);
 });
 
 onUnmounted(() => {
