@@ -7,7 +7,7 @@
         <p v-if="isInput" class="error-message">{{ errorMessage }}</p>
       </div>
     </div>
-<div v-else class="love-view" @mousemove="createHeart">
+<div v-else class="love-view" @mousemove="createHeart" @touchmove="handleTouchMove">
   
   <div class="love-view">
     <button class="music-button" @click="toggleMusic">💓</button>
@@ -100,8 +100,17 @@
   overflow: hidden;
   background: linear-gradient(45deg, #ff9a9e, #fad0c4);
   min-height: 100vh;
+  /* height: 100vh; 添加：确保覆盖整个视口高度 */
+  width: 100%; /* 添加：确保宽度是全屏的 */
   position: relative;
   max-width: 100%;
+}
+
+/* 添加：媒体查询以适应移动设备 */
+@media (max-width: 768px) {
+  .love-view {
+    padding: 1rem; /* 添加：为移动设备添加内边距 */
+  }
 }
 
 @keyframes breath {
@@ -315,11 +324,12 @@ const toggleMusic = () => {
 
 onMounted(() => {
   if(accessGranted){
-      audioRef.value = document.getElementById('bgm')
+    audioRef.value = document.getElementById('bgm')
     audioRef.value.volume = 0.3
-   audioRef.value.play()
+    audioRef.value.play()
     isPlaying.value = true
   }
+
 })
 
 const createHeart = async (e) => {
@@ -345,4 +355,19 @@ const createHeart = async (e) => {
   document.querySelector('.love-view').appendChild(heart);
   setTimeout(() => heart.remove(), 8000);
 };
+
+const handleTouchMove = (e) => {
+  // 获取触摸事件的第一个触摸点
+  const touch = e.touches[0];
+  if (touch) {
+    // 创建一个虚拟的鼠标事件对象
+    const mouseEvent = new MouseEvent('mousemove', {
+      clientX: touch.clientX,
+      clientY: touch.clientY
+    });
+    // 触发 createHeart 方法
+    createHeart(mouseEvent);
+  }
+};
+
 </script>
