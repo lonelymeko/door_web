@@ -336,15 +336,16 @@ const createHeart = async (e) => {
   if(Math.random() > 0.3) return;
   const heart = document.createElement('div');
   heart.className = 'heart';
-  if(Math.random() > 0.95){
+  if(Math.random() > 0.7){
+    // 请求本地的 love_words.json 文件
+    let {data} = await axios.get('/love_words/love_words.json');
     // 随机获取一句情话
-    let {data} = await axios.get('https://api.uomg.com/api/rand.qinghua?format=json')
-
-    message.value = data.content
-    console.log(message.value)
-    heart.innerHTML = '❤️\n ' + message.value
+    const randomIndex = Math.floor(Math.random() * data.content.length);
+    message.value = data.content[randomIndex];
+    console.log(message.value);
+    heart.innerHTML = '❤️\n ' + message.value;
   }else{
-    heart.innerHTML = '❤️'
+    heart.innerHTML = '❤️';
   }
   heart.style.left = e.pageX + 'px';
   heart.style.top = e.pageY + 'px';
