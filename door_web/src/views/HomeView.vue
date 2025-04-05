@@ -1,63 +1,98 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-// ... (keep existing imports and typewriter setup) ...
+import { locales } from '/src/utils/locales.js' // 确保路径正确!
 
-// --- State Adjustments ---
+// --- Language State ---
+const currentLanguage = ref('zh-CN'); // Default language
 
-// Define sidebar navigation items
-const navItems = ref([
+// Translation helper function
+const t = (key, replacements = {}) => {
+  const lang = currentLanguage.value;
+  let translation = locales[lang]?.[key] || locales['zh-CN']?.[key] || key; // Fallback to Chinese, then key
+
+  // Handle replacements like {year}
+  Object.keys(replacements).forEach(repKey => {
+    translation = translation.replace(`{${repKey}}`, replacements[repKey]);
+  });
+
+  return translation;
+};
+
+// Function to change language
+const changeLanguage = (lang) => {
+  currentLanguage.value = lang;
+  // Optionally, save preference to localStorage
+  // localStorage.setItem('preferredLang', lang);
+  // Also update calendar/date formats if needed
+  calendarInfo.value = new Date().toLocaleDateString(lang); // Update calendar format
+};
+
+// --- Add State for Mobile Nav ---
+const isMobileNavOpen = ref(false);
+
+// --- State Adjustments (Make them computed based on language) ---
+
+// Define sidebar navigation items using computed
+const navItems = computed(() => [
   // Main Section
-  { title: '搜索', icon: '🔍', link: '#search-section', internal: true, section: 'main' },
-  { title: '网站导航', icon: '🌐', link: '#nav-section', internal: true, section: 'main' }, // Links to the grid below
-  { title: 'AI 聊天', icon: '💬', link: '#chat-section', internal: true, section: 'main' }, // Placeholder
-  { title: '今日热搜', icon: '🔥', link: '#hotsearch-section', internal: true, section: 'main' }, // Links to hot tags
+  { title: t('search'), icon: '🔍', link: '#search-section', internal: true, section: 'main' },
+  { title: t('navGrid'), icon: '🌐', link: '#nav-section', internal: true, section: 'main' },
+  { title: t('aiChat'), icon: '💬', link: '#chat-section', internal: true, section: 'main' },
+  { title: t('hotSearch'), icon: '🔥', link: '#hotsearch-section', internal: true, section: 'main' },
   // Extras Section
-  { title: '个人博客', icon: '✍️', link: '/blog', internal: false, section: 'extras' }, //  Set internal: false 
-  { title: '玺朽的砂糖', icon: '💖', link: '/love', internal: true, section: 'extras' }, // Internal Vue Route, moved here
-  { title: '新闻资讯', icon: '📰', link: '#news-section', internal: true, section: 'extras' }, // Placeholder
+  { title: t('blog'), icon: '✍️', link: '/blog', internal: false, section: 'extras' },
+  { title: t('loveSpace'), icon: '💖', link: '/love', internal: true, section: 'extras' },
+  { title: t('news'), icon: '📰', link: '#news-section', internal: true, section: 'extras' },
   // User Section
-  { title: '赞助我', icon: '💰', link: '#', internal: true, click: () => { showSponsor.value = true }, section: 'user' }
+  { title: t('sponsor'), icon: '💰', link: '#', internal: true, click: () => { showSponsor.value = true }, section: 'user' }
 ]);
 
-// Define links for the main content navigation grid (mostly external)
-const navLinks = ref([
-    { name: 'Bilibili', url: 'https://www.bilibili.com' },
-    { name: '阿里云ECS', url: 'https://ecs.console.aliyun.com/' },
-    { name: '雨课堂', url: 'https://www.yuketang.cn/v2/web/index' },
-    { name: 'Deepseek Chat', url: 'https://chat.deepseek.com/' },
-    { name: 'MOJI辞書', url: 'https://www.mojidict.com/' },
-    // Add others if needed
+// Define links for the main content navigation grid
+// Note: Translating external site names might be optional
+const navLinks = computed(() => [
+    { name: t('navLinkBilibili'), url: 'https://www.bilibili.com' },
+    { name: t('navLinkAliyun'), url: 'https://ecs.console.aliyun.com/' },
+    { name: t('navLinkYuketang'), url: 'https://www.yuketang.cn/v2/web/index' },
+    { name: t('navLinkDeepseek'), url: 'https://chat.deepseek.com/' },
+    { name: t('navLinkMoji'), url: 'https://www.mojidict.com/' },
 ]);
 
 
-// --- Search Engine Config ---
-const engines = [
-  { name: '必应', value: 'bing', url: 'https://www.bing.com/search?q=' },
-  { name: '百度', value: 'baidu', url: 'https://www.baidu.com/s?wd=' },
-  { name: '搜狗', value: 'sogou', url: 'https://www.sogou.com/web?query=' }
-];
-const selectedEngine = ref(engines[0]);
+// --- Search Engine Config (Make names computed) ---
+const engines = computed(() => [
+  { name: t('engineBing'), value: 'bing', url: 'https://www.bing.com/search?q=' },
+  { name: t('engineBaidu'), value: 'baidu', url: 'https://www.baidu.com/s?wd=' },
+  { name: t('engineSogou'), value: 'sogou', url: 'https://www.sogou.com/web?query=' }
+]);
+// selectedEngine needs to be managed carefully if engines array changes structure
+// Simplest: keep track of the *value* and find the corresponding object
+const selectedEngineValue = ref(engines.value[0].value);
+const selectedEngine = computed(() => engines.value.find(e => e.value === selectedEngineValue.value) || engines.value[0]);
+
 const searchQuery = ref('');
 
 // --- Other State ---
 const showSponsor = ref(false);
-const hotSearchList = ref(['Vue 3', 'Tailwind CSS', '天气 API', 'DeepSeek', '大模型', '备案流程', 'JavaScript']);
+const hotSearchList = ref(['Vue 3', 'Tailwind CSS', '天气 API', 'DeepSeek', '大模型', '备案流程', 'JavaScript']); // Hot search terms usually aren't translated
 const currentYear = new Date().getFullYear();
-const weatherInfo = ref("☀️ 晴朗 25°C");
-const calendarInfo = ref(new Date().toLocaleDateString('zh-CN'));
-const newsHeadlines = ref([
-    { id: 1, title: "科技巨头发布新款 AI 芯片" },
-    { id: 2, title: "国内新能源汽车销量再创新高" },
-    { id: 3, title: "某地探索数字人民币应用新场景" },
+const weatherInfo = ref("☀️ 晴朗 25°C"); // Weather might need a more complex solution or API that supports language
+const calendarInfo = ref(new Date().toLocaleDateString(currentLanguage.value)); // Use current lang for initial format
+const newsHeadlines = ref([ // Example static news - better fetched from an API
+    { id: 1, titleKey: "news1Title", title: "科技巨头发布新款 AI 芯片" },
+    { id: 2, titleKey: "news2Title", title: "国内新能源汽车销量再创新高" },
+    { id: 3, titleKey: "news3Title", title: "某地探索数字人民币应用新场景" },
 ]);
+// Add dummy translations for news placeholders in locales.js if needed
+// Example in locales.js:
+// 'zh-CN': { ..., news1Title: "科技巨头发布新款 AI 芯片", ... }
+// 'en-US': { ..., news1Title: "Tech Giant Releases New AI Chip", ... }
+// 'ja-JP': { ..., news1Title: "大手テック企業が新しいAIチップを発表", ... }
 
-// --- Typewriter State & Logic (Keep as is) ---
-const quotes = [
-  "玺朽的导航 - 发现互联网的精彩。",
-  "学无止境，探索不息。",
-  "代码改变世界，导航连接未来。",
-  "保持好奇，永远学习。"
-];
+
+// --- Typewriter State & Logic (Use computed for quotes) ---
+const quotes = computed(() => [
+  t('quote1'), t('quote2'), t('quote3'), t('quote4'), t('quote5'), t('quote6')
+]);
 const currentQuoteIndex = ref(0);
 const displayedTitle = ref('');
 const typingSpeed = 100;
@@ -66,32 +101,37 @@ let typingInterval = null;
 let charIndex = 0;
 let isDeleting = false;
 
-const typeWriterEffect = () => {
-    // ... (typewriter logic remains the same) ...
-      const currentQuote = quotes[currentQuoteIndex.value];
-      if (!currentQuote) return; // Guard against issues
+// --- Mobile Nav Methods ---
+const toggleMobileNav = () => { isMobileNavOpen.value = !isMobileNavOpen.value; };
+const closeMobileNav = () => { if (isMobileNavOpen.value) { isMobileNavOpen.value = false; } }
 
-      clearTimeout(typingInterval); // Clear previous timeout
+const typeWriterEffect = () => {
+      // Use the computed quotes array
+      const currentQuoteArray = quotes.value;
+      const currentQuote = currentQuoteArray[currentQuoteIndex.value];
+      if (!currentQuote) return;
+
+      clearTimeout(typingInterval);
 
       if (isDeleting) {
         displayedTitle.value = currentQuote.substring(0, charIndex - 1);
         charIndex--;
         if (charIndex <= 0) {
           isDeleting = false;
-          charIndex = 0; // Reset charIndex
-          currentQuoteIndex.value = (currentQuoteIndex.value + 1) % quotes.length;
-          typingInterval = setTimeout(typeWriterEffect, typingSpeed * 5); // Pause before next
+          charIndex = 0;
+          currentQuoteIndex.value = (currentQuoteIndex.value + 1) % currentQuoteArray.length;
+          typingInterval = setTimeout(typeWriterEffect, typingSpeed);
         } else {
-          typingInterval = setTimeout(typeWriterEffect, typingSpeed / 2); // Faster deleting
+          typingInterval = setTimeout(typeWriterEffect, typingSpeed / 2);
         }
       } else {
         displayedTitle.value = currentQuote.substring(0, charIndex + 1);
         charIndex++;
         if (charIndex >= currentQuote.length) {
           isDeleting = true;
-          typingInterval = setTimeout(typeWriterEffect, pauseBetweenQuotes); // Pause at end
+          typingInterval = setTimeout(typeWriterEffect, pauseBetweenQuotes);
         } else {
-          typingInterval = setTimeout(typeWriterEffect, typingSpeed); // Continue typing
+          typingInterval = setTimeout(typeWriterEffect, typingSpeed);
         }
       }
 };
@@ -106,11 +146,12 @@ const performSearch = () => {
 
 const groupedNavItems = computed(() => {
   const groups = { main: [], extras: [], user: [] };
+  // Use the computed navItems which already have translated titles
   navItems.value.forEach(item => {
     if (groups[item.section]) {
       groups[item.section].push(item);
     } else {
-      groups.main.push(item); // Default group if section mismatch
+      groups.main.push(item); // Default group
     }
   });
   return groups;
@@ -118,157 +159,163 @@ const groupedNavItems = computed(() => {
 
 
 onMounted(() => {
+  // Check localStorage for saved language preference
+  // const savedLang = localStorage.getItem('preferredLang');
+  // if (savedLang && locales[savedLang]) {
+  //   currentLanguage.value = savedLang;
+  // }
+  calendarInfo.value = new Date().toLocaleDateString(currentLanguage.value); // Ensure initial format correct
   clearTimeout(typingInterval); // Ensure clean start
+  // Reset typewriter state as quotes might change
+  currentQuoteIndex.value = 0;
+  charIndex = 0;
+  isDeleting = false;
+  displayedTitle.value = ''; // Clear initially
   typeWriterEffect();
 });
 
 onBeforeUnmount(() => {
-  clearTimeout(typingInterval); // Cleanup
+  clearTimeout(typingInterval);
 });
 
 const handleClick = (event, clickHandler) => {
-  // If a specific click handler function is provided for the item...
   if (clickHandler && typeof clickHandler === 'function') {
-    event.preventDefault(); // Prevent the default link behavior (like navigating to '#')
-    clickHandler();       // Execute the custom handler (e.g., showSponsor)
+    event.preventDefault();
+    clickHandler();
   }
-  // Otherwise, do nothing here, allowing the browser's default link navigation
-  // for links like '/blog' or external http links.
+   closeMobileNav(); // Close nav on any item click
 }
 
 const determineTarget = (item) => {
-  // Open external http/https links in a new tab
-  if (item.link.startsWith('http')) {
-    return '_blank';
-  }
-  // Open non-internal root-relative links (like '/blog') in the same tab, causing full navigation
-  if (item.internal === false && item.link.startsWith('/')) {
-     return '_self'; // Or '_blank' if you want the blog in a new tab
-  }
-  // Keep section links (#) and internal Vue router links in the same tab
+  if (item.link.startsWith('http')) return '_blank';
+  if (item.internal === false && item.link.startsWith('/')) return '_self';
   return '_self';
 }
 
 </script>
 
 <template>
-  <div class="page-container">
-    <!-- Left Sidebar -->
-    <aside class="sidebar">
+  <div class="page-container" :class="{ 'mobile-nav-active': isMobileNavOpen }">
+    <!-- Overlay -->
+    <div v-if="isMobileNavOpen" class="mobile-nav-overlay" @click="closeMobileNav"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" :class="{ 'mobile-open': isMobileNavOpen }">
       <div class="sidebar-header">
         <span class="logo">玺朽</span>
+        <button class="mobile-close-btn" @click="closeMobileNav">×</button>
       </div>
       <nav class="sidebar-nav">
-        <!-- Main Navigation Section -->
+        <!-- Main Section -->
         <ul class="nav-group">
-           <li v-for="(item, index) in groupedNavItems.main" :key="'main-'+index" :class="{ active: false }">
-             <!-- Use router-link for internal Vue routes starting with '/' -->
-             <router-link v-if="item.internal && item.link.startsWith('/')" :to="item.link">
+           <li v-for="(item, index) in groupedNavItems.main" :key="'main-'+item.link+'-'+index" :class="{ active: false }">
+             <router-link v-if="item.internal && item.link.startsWith('/')" :to="item.link" @click="closeMobileNav">
                 <span class="nav-icon">{{ item.icon }}</span>
-                <span class="nav-text">{{ item.title }}</span>
+                <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
              </router-link>
-             <!-- Use <a> for section links (#) or links with click handlers -->
-             <a v-else :href="item.link" @click.prevent="item.click ? item.click() : null" :target="item.link.startsWith('http') ? '_blank' : '_self'">
+              <a v-else :href="item.link" @click="handleClick($event, item.click)" :target="determineTarget(item)">
                <span class="nav-icon">{{ item.icon }}</span>
-               <span class="nav-text">{{ item.title }}</span>
+               <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
              </a>
            </li>
         </ul>
         <div class="nav-separator"></div>
-         <!-- Extras Navigation Section -->
+         <!-- Extras Section -->
          <ul class="nav-group">
-        <!-- Inside the <ul class="nav-group"> for 'extras' section -->
-          <li v-for="(item, index) in groupedNavItems.extras" :key="'extras-'+index" :class="{ active: false }">
-            <!-- Use router-link ONLY for internal Vue routes starting with '/' AND marked internal: true -->
-            <router-link v-if="item.internal === true && item.link.startsWith('/')" :to="item.link">
+          <li v-for="(item, index) in groupedNavItems.extras" :key="'extras-'+item.link+'-'+index" :class="{ active: false }">
+            <router-link v-if="item.internal === true && item.link.startsWith('/')" :to="item.link" @click="closeMobileNav">
               <span class="nav-icon">{{ item.icon }}</span>
-              <span class="nav-text">{{ item.title }}</span>
+              <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
             </router-link>
-            <!-- Use <a> for:
-                  - External links (http...)
-                  - Section links (#...)
-                  - Non-internal root-relative links (/blog)
-                  - Links with click handlers (# + click)
-            -->
-            <a v-else
-               :href="item.link"
-               @click="item.click ? handleClick($event, item.click) : null"  
-               :target="determineTarget(item)">
+            <a v-else :href="item.link" @click="handleClick($event, item.click)" :target="determineTarget(item)">
               <span class="nav-icon">{{ item.icon }}</span>
-              <span class="nav-text">{{ item.title }}</span>
+              <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
             </a>
          </li>
-
-        <!-- Repeat similar logic adjustment for the 'main' and 'user' sections if needed -->
-        <!-- Example for 'user' section (Sponsor link): -->
-         <li v-for="(item, index) in groupedNavItems.user" :key="'user-'+index" :class="{ active: false }">
+         </ul>
+         <div class="nav-separator"></div>
+         <!-- User Section -->
+         <ul class="nav-group">
+         <li v-for="(item, index) in groupedNavItems.user" :key="'user-'+item.link+'-'+index" :class="{ active: false }">
              <a :href="item.link"
-                @click="item.click ? handleClick($event, item.click) : null" 
+                @click="handleClick($event, item.click)"
                 :target="determineTarget(item)">
                <span class="nav-icon">{{ item.icon }}</span>
-               <span class="nav-text">{{ item.title }}</span>
+               <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
              </a>
          </li>
          </ul>
       </nav>
       <div class="sidebar-footer">
-        v1.0.2 <!-- Updated version placeholder -->
+        v1.0.3 <!-- Version bump -->
       </div>
     </aside>
 
     <!-- Main Content Area -->
     <main class="main-content">
-      <!-- Top Bar (remains the same) -->
+      <!-- Top Bar -->
        <header class="top-bar">
             <div class="top-bar-left">
-               <span class="top-bar-item">应用中心</span>
-               <span class="top-bar-item">能力测验</span>
-               <span class="top-bar-item">网页插件</span>
+                <button class="mobile-nav-toggle" @click="toggleMobileNav">
+                 <span></span><span></span><span></span>
+               </button>
+               <!-- Use t() for top bar items -->
+               <span class="top-bar-item desktop-only">{{ t('appCenter') }}</span>
+               <span class="top-bar-item desktop-only">{{ t('abilityTest') }}</span>
+               <span class="top-bar-item desktop-only">{{ t('webPlugin') }}</span>
             </div>
             <div class="top-bar-right">
               <span class="top-bar-item weather-widget">
-                 {{ weatherInfo }}
+                 {{ weatherInfo }} <!-- Weather needs separate handling -->
                </span>
                <span class="top-bar-item calendar-widget">
-                 📅 {{ calendarInfo }}
+                 📅 {{ calendarInfo }} <!-- Calendar format updates automatically -->
                </span>
-               <span class="top-bar-item">打卡</span>
-               <span class="top-bar-item buy-item">购买 Pro</span>
+               <span class="top-bar-item desktop-only">{{ t('checkIn') }}</span>
+               <span class="top-bar-item buy-item">{{ t('buyPro') }}</span>
             </div>
       </header>
 
       <!-- Content Body -->
       <div class="content-body">
-        <!-- Title with Typewriter Effect (remains the same) -->
+        <!-- Title with Typewriter Effect -->
         <h1 class="main-title">
           {{ displayedTitle }}<span class="cursor">|</span>
         </h1>
 
-        <!-- Search Section (remains the same) -->
+        <!-- Search Section -->
         <section id="search-section" class="content-section search-section">
             <div class="search-box">
                 <span class="search-icon">🔍</span>
-                 <select v-model="selectedEngine" class="search-select">
-                    <option v-for="engine in engines" :key="engine.value" :value="engine">
-                      {{ engine.name }}
+                 <!-- Use computed engines -->
+                 <select v-model="selectedEngineValue" class="search-select">
+                    <option v-for="engine in engines" :key="engine.value" :value="engine.value">
+                      {{ engine.name }} <!-- Name is now computed -->
                     </option>
                   </select>
                 <input
                   type="text"
                   v-model="searchQuery"
-                  placeholder="查询单词或文本..."
+                  :placeholder="t('searchPlaceholder')"
                   @keyup.enter="performSearch"
                   class="search-input"
                 />
-                <button @click="performSearch" class="search-button">搜索</button>
+                <button @click="performSearch" class="search-button">{{ t('searchButton') }}</button>
               </div>
-               <div class="language-switch">语言切换: 简体中文 | English</div>
+               <!-- Language Switcher -->
+               <div class="language-switch">
+                 {{ t('languageSwitch') }}:
+                 <a href="#" @click.prevent="changeLanguage('zh-CN')" :class="{ active: currentLanguage === 'zh-CN' }">简体中文</a> |
+                 <a href="#" @click.prevent="changeLanguage('en-US')" :class="{ active: currentLanguage === 'en-US' }">English</a> |
+                 <a href="#" @click.prevent="changeLanguage('ja-JP')" :class="{ active: currentLanguage === 'ja-JP' }">日本語</a>
+               </div>
         </section>
 
-        <!-- Hot Search Section (remains the same) -->
+        <!-- Hot Search Section -->
         <section id="hotsearch-section" class="content-section hot-search-section">
-           <h2 class="section-title">实时热搜</h2>
+           <h2 class="section-title">{{ t('hotSearchTitle') }}</h2>
            <div class="hot-search-tags">
+             <!-- Hot search terms usually remain in their original language -->
              <span v-for="(term, index) in hotSearchList" :key="index" class="hot-tag">
                {{ term }}
              </span>
@@ -277,79 +324,94 @@ const determineTarget = (item) => {
 
          <!-- Navigation Links Section -->
         <section id="nav-section" class="content-section">
-           <h2 class="section-title">常用网站导航</h2>
+           <h2 class="section-title">{{ t('navGridTitle') }}</h2>
            <div class="nav-links-grid">
-               <!-- RENDER EXTERNAL/GRID LINKS HERE -->
-               <a v-for="(link, index) in navLinks" :key="'grid-'+index" :href="link.url" target="_blank" class="nav-link-card">
-                   {{ link.name }}
+               <!-- Use computed navLinks -->
+               <a v-for="(link, index) in navLinks" :key="'grid-'+link.url+'-'+index" :href="link.url" target="_blank" class="nav-link-card">
+                   {{ link.name }} <!-- Name is now computed -->
                </a>
-               <a href="#" class="nav-link-card add-link-card">+ 添加</a>
+               <a href="#" class="nav-link-card add-link-card" @click.prevent>{{ t('addLink') }}</a>
            </div>
         </section>
 
-        <!-- AI Chat Placeholder Section (remains the same) -->
+        <!-- AI Chat Placeholder Section -->
         <section id="chat-section" class="content-section ai-chat-placeholder">
-          <h2 class="section-title">Deepseek AI 聊天</h2>
+          <h2 class="section-title">{{ t('aiChatTitle') }}</h2>
           <div class="chat-interface">
             <div class="chat-messages">
-              <p>AI: 你好！有什么可以帮你的吗？</p>
+              <p>{{ t('aiGreeting') }}</p> <!-- Use t() -->
             </div>
             <div class="chat-input-area">
-              <input type="text" placeholder="输入你的问题..." />
-              <button>发送</button>
+              <input type="text" :placeholder="t('chatInputPlaceholder')" />
+              <button>{{ t('chatSendButton') }}</button> <!-- Use t() -->
             </div>
           </div>
         </section>
 
         <!-- News Feed Placeholder Section -->
         <section id="news-section" class="content-section news-feed-placeholder">
-           <h2 class="section-title">今日头条 <a href="#" class="view-more">查看更多 ></a></h2>
+           <h2 class="section-title">{{ t('newsTitle') }} <a href="#" class="view-more">{{ t('viewMore') }}</a></h2>
           <ul class="news-list">
-            <li v-for="item in newsHeadlines" :key="item.id">
-               <a href="#">{{ item.title }}</a>
-            </li>
+             <!-- Example for news titles if keys were added -->
+             <li v-for="item in newsHeadlines" :key="item.id">
+               <a href="#">{{ item.titleKey ? t(item.titleKey) : item.title }}</a>
+             </li>
           </ul>
         </section>
 
       </div>
 
-       <!-- Footer (remains the same) -->
+       <!-- Footer -->
        <footer class="main-footer">
-          <span>© {{ currentYear }} 玺朽导航 版权所有</span>
+          <!-- Use t() and pass year as replacement -->
+          <span>{{ t('footerCopyright', { year: currentYear }) }}</span>
+          <span class="separator mobile-hidden">|</span> <br class="desktop-hidden">
+          <a href="#">{{ t('contactUs') }}</a>
           <span class="separator">|</span>
-          <a href="#">联系我们</a>
-          <span class="separator">|</span>
-          <a href="#">隐私声明</a>
-          <span class="separator">|</span>
-          <!-- IMPORTANT: Replace with your actual ICP备案号 -->
-          <a href="https://beian.miit.gov.cn/" target="_blank">粤ICP备XXXXXXXX号-Y</a>
-          <span class="separator">|</span>
-           <!-- IMPORTANT: Replace with your actual 公安备案号 -->
-          <a href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=XXXXXXXXXXXXXX" target="_blank">
-              <img src="/img/gongan.png" alt="公安备案" style="height: 14px; vertical-align: middle; margin-right: 5px;"> <!-- Ensure gongan.png is in public folder -->
-              粤公网安备 XXXXXXXXXXXXXX号
-          </a>
+          <a href="#">{{ t('privacyPolicy') }}</a>
+          <span class="separator mobile-hidden">|</span> <br class="desktop-hidden">
+          <a href="https://beian.miit.gov.cn/" target="_blank">
+            <img src="/img/gongan.png" alt="备案图标" style="height: 14px; vertical-align: middle; margin-right: 5px;">
+          {{ t('icpRecord') }}</a>
         </footer>
     </main>
 
-    <!-- Sponsor Modal (remains the same) -->
+    <!-- Sponsor Modal -->
     <div class="sponsor-modal" v-if="showSponsor">
-       <!-- ... modal content ... -->
         <div class="modal-content">
-         <p style="text-align: center; font-weight: bold;">感谢您的支持！</p>
-        <div style="display: flex; gap: 20px; justify-content: center;">
-            <img src="/img/alipay.jpg" alt="支付宝" style="width: 200px; height: auto; border: 1px solid #eee;">
-            <img src="/img/weixin.jpg" alt="微信" style="width: 200px; height: auto; border: 1px solid #eee;">
+         <p style="text-align: center; font-weight: bold;">{{ t('sponsorThanks') }}</p>
+        <div class="sponsor-qr-container">
+            <img src="/img/alipay.jpg" alt="支付宝" >
+            <img src="/img/weixin.jpg" alt="微信" >
         </div>
-        <button @click="showSponsor = false" class="close-modal-button">关闭</button>
+        <button @click="showSponsor = false" class="close-modal-button">{{ t('sponsorClose') }}</button>
       </div>
     </div>
 
   </div>
 </template>
 
-<!-- CSS <style scoped> remains the same as the previous version -->
 <style scoped>
+/* --- Add Style for Active Language Link --- */
+.language-switch a {
+  text-decoration: none;
+  color: #007bff; /* Standard link blue */
+  margin: 0 2px;
+  transition: color 0.2s ease;
+}
+.language-switch a:hover {
+  color: #e63946; /* Accent color on hover */
+  text-decoration: underline;
+}
+.language-switch a.active {
+  color: #e63946; /* Accent color for active language */
+  font-weight: bold;
+  text-decoration: none;
+  cursor: default;
+}
+
+
+/* --- Keep ALL existing CSS from the previous correct version --- */
 /* Basic Reset & Font */
 * {
   box-sizing: border-box;
@@ -357,42 +419,49 @@ const determineTarget = (item) => {
   padding: 0;
 }
 
-html, body { /* Apply to html too for full height */
+html, body {
   height: 100%;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f8f9fa; /* Light background for the page */
+  background-color: #f8f9fa;
   color: #333;
+}
+
+#app {
+    height: 100%;
 }
 
 .page-container {
   display: flex;
-  min-height: 100vh;
+  height: 100%;
+  width: 100%;
 }
 
 /* Sidebar Styles */
 .sidebar {
   width: 240px;
-  background-color: #ffffff; /* White sidebar */
+  background-color: #ffffff;
   border-right: 1px solid #e0e0e0;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  transition: width 0.3s ease-in-out;
 }
 
 .sidebar-header {
-  padding: 20px;
+  padding: 0 20px;
   text-align: center;
   border-bottom: 1px solid #e0e0e0;
-  height: 60px; /* Match top-bar height */
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .logo {
   font-size: 1.5em;
   font-weight: bold;
-  color: #e63946; /* Accent color */
+  color: #e63946;
 }
 
 .sidebar-nav {
@@ -400,11 +469,13 @@ html, body { /* Apply to html too for full height */
   overflow-y: auto;
   padding: 15px 0;
 }
+.sidebar-nav::-webkit-scrollbar { display: none; }
+.sidebar-nav { -ms-overflow-style: none; scrollbar-width: none; }
 
 .nav-group {
   list-style: none;
   padding: 0;
-  margin: 0 0 15px 0; /* Space below group */
+  margin: 0 0 15px 0;
 }
 
 .nav-separator {
@@ -413,7 +484,6 @@ html, body { /* Apply to html too for full height */
     margin: 10px 20px;
 }
 
-/* Style for both router-link and a tags in sidebar */
 .sidebar-nav li > a,
 .sidebar-nav li > router-link {
   display: flex;
@@ -424,29 +494,28 @@ html, body { /* Apply to html too for full height */
   transition: background-color 0.2s ease, color 0.2s ease;
   border-radius: 4px;
   margin: 2px 10px;
-  cursor: pointer; /* Ensure pointer for all */
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-nav li > a:hover,
 .sidebar-nav li > router-link:hover {
-  background-color: #f1f3f5; /* Light hover */
+  background-color: #f1f3f5;
   color: #e63946;
 }
 
-/* Active class might be automatically added by Vue Router for router-link */
 .sidebar-nav li.active > a,
-.sidebar-nav li > .router-link-active, /* Default Vue Router active class */
-.sidebar-nav li > .router-link-exact-active { /* Default Vue Router exact active class */
-  background-color: #e63946; /* Accent color for active */
-  color: #ffffff !important; /* Ensure text is white */
+.sidebar-nav li > .router-link-active,
+.sidebar-nav li > .router-link-exact-active {
+  background-color: #e63946;
+  color: #ffffff !important;
 }
 
-/* Ensure icons inside active links are also white */
 .sidebar-nav li.active > a .nav-icon,
 .sidebar-nav li > .router-link-active .nav-icon,
-.sidebar-nav li > .router-link-exact-active .nav-icon {
-    color: #ffffff;
-}
+.sidebar-nav li > .router-link-exact-active .nav-icon,
 .sidebar-nav li.active > a .nav-text,
 .sidebar-nav li > .router-link-active .nav-text,
 .sidebar-nav li > .router-link-exact-active .nav-text {
@@ -456,14 +525,16 @@ html, body { /* Apply to html too for full height */
 .nav-icon {
   margin-right: 15px;
   font-size: 1.1em;
-  width: 20px; /* Ensure alignment */
+  width: 20px;
   text-align: center;
-  color: #888; /* Default icon color */
-  transition: color 0.2s ease; /* Smooth transition */
+  flex-shrink: 0;
+  transition: color 0.2s ease;
 }
 
 .nav-text {
   font-size: 0.95em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-footer {
@@ -472,34 +543,34 @@ html, body { /* Apply to html too for full height */
   color: #aaa;
   text-align: center;
   border-top: 1px solid #e0e0e0;
+  flex-shrink: 0;
 }
 
-/* Main Content Styles */
+/* Main Content Area */
 .main-content {
-  flex-grow: 1;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  background-color: #f8f9fa; /* Match page background */
-  max-height: 100vh; /* Limit height to viewport */
-  overflow: hidden; /* Hide main scrollbar if content scrolls */
+  background-color: #f8f9fa;
+  overflow-x: hidden;
 }
 
-/* Top Bar Styles */
+/* Top Bar */
 .top-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 30px; /* Adjust padding */
+  padding: 0 30px;
   background-color: #ffffff;
   border-bottom: 1px solid #e0e0e0;
-  height: 60px; /* Fixed height */
-  flex-shrink: 0; /* Prevent shrinking */
+  height: 60px;
+  flex-shrink: 0;
 }
 
 .top-bar-left, .top-bar-right {
   display: flex;
   align-items: center;
-  gap: 20px; /* Spacing between items */
+  gap: 20px;
 }
 
 .top-bar-item {
@@ -507,7 +578,7 @@ html, body { /* Apply to html too for full height */
   color: #555;
   cursor: pointer;
   transition: color 0.2s ease;
-  white-space: nowrap; /* Prevent wrapping */
+  white-space: nowrap;
 }
 .top-bar-item:hover {
     color: #e63946;
@@ -516,7 +587,7 @@ html, body { /* Apply to html too for full height */
 .buy-item {
     color: #e63946;
     font-weight: 500;
-    background-color: #fee; /* Light red background */
+    background-color: #fee;
     padding: 5px 10px;
     border-radius: 4px;
 }
@@ -529,11 +600,11 @@ html, body { /* Apply to html too for full height */
     border-radius: 4px;
 }
 
-/* Content Body Styles */
+/* Content Body */
 .content-body {
   flex-grow: 1;
   padding: 30px;
-  overflow-y: auto; /* Enable scrolling for content only */
+  overflow-y: auto;
 }
 
 .main-title {
@@ -541,18 +612,16 @@ html, body { /* Apply to html too for full height */
   font-weight: 500;
   color: #333;
   margin-bottom: 30px;
-  min-height: 40px; /* Ensure space for text */
-  font-family: 'Courier New', Courier, monospace; /* Monospace for typewriter */
-  position: relative; /* Needed for cursor */
+  min-height: 40px;
+  font-family: 'Courier New', Courier, monospace;
+  position: relative;
 }
 
 .cursor {
-  /* display: inline-block; */
-  /* margin-left: 2px; */
   animation: blink 0.7s infinite;
   font-weight: bold;
-  position: absolute; /* Position relative to title */
-  bottom: 5px; /* Adjust vertical position */
+  position: absolute;
+  bottom: 5px;
   margin-left: 3px;
 }
 
@@ -590,217 +659,73 @@ html, body { /* Apply to html too for full height */
     color: #e63946;
 }
 
-/* Search Section Specific */
+/* Search Section */
 .search-section .search-box {
   display: flex;
   align-items: center;
   border: 1px solid #ced4da;
-  border-radius: 25px; /* More rounded */
+  border-radius: 25px;
   padding: 5px 10px 5px 15px;
   background-color: #fff;
   margin-bottom: 15px;
-  max-width: 700px; /* Limit width */
+  max-width: 700px;
   margin-left: auto;
   margin-right: auto;
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
-
-.search-section .search-icon {
-    font-size: 1.2em;
-    color: #888;
-    margin-right: 10px;
-}
+.search-section .search-icon { font-size: 1.2em; color: #888; margin-right: 10px; }
 .search-section .search-select {
-    border: none;
-    background: transparent;
-    padding: 8px 5px;
-    margin-right: 5px;
-    color: #555;
-    font-size: 0.9em;
-    cursor: pointer;
-    outline: none;
-    border-right: 1px solid #eee; /* Separator */
+    border: none; background: transparent; padding: 8px 5px; margin-right: 5px;
+    color: #555; font-size: 0.9em; cursor: pointer; outline: none;
+    border-right: 1px solid #eee; -webkit-appearance: none; -moz-appearance: none; appearance: none;
 }
-.search-section .search-select:focus {
-    outline: none;
-}
-
-.search-section .search-input {
-  flex-grow: 1;
-  border: none;
-  outline: none;
-  padding: 10px;
-  font-size: 1em;
-  background: transparent;
-}
-
+.search-section .search-select:focus { outline: none; }
+.search-section .search-input { flex-grow: 1; border: none; outline: none; padding: 10px; font-size: 1em; background: transparent; }
 .search-section .search-button {
-  padding: 8px 20px;
-  background: #e63946; /* Accent color */
-  color: white;
-  border: none;
-  border-radius: 20px; /* Rounded button */
-  cursor: pointer;
-  font-size: 0.9em;
-  transition: background-color 0.2s ease;
+    padding: 8px 20px; background: #e63946; color: white; border: none;
+    border-radius: 20px; cursor: pointer; font-size: 0.9em; transition: background-color 0.2s ease;
 }
+.search-section .search-button:hover { background: #d62828; }
+.language-switch { text-align: center; font-size: 0.9em; color: #777; margin-top: 10px; }
 
-.search-section .search-button:hover {
-  background: #d62828; /* Darker shade */
-}
-
-.language-switch {
-    text-align: center;
-    font-size: 0.9em;
-    color: #777;
-    margin-top: 10px;
-}
-
-/* Hot Search Specific */
-.hot-search-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
+/* Hot Search */
+.hot-search-tags { display: flex; flex-wrap: wrap; gap: 10px; }
 .hot-tag {
-  background-color: #f1f3f5;
-  padding: 5px 12px;
-  border-radius: 15px;
-  font-size: 0.9em;
-  color: #555;
-  cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease;
+    background-color: #f1f3f5; padding: 5px 12px; border-radius: 15px;
+    font-size: 0.9em; color: #555; cursor: pointer; transition: background-color 0.2s ease, color 0.2s ease;
 }
+.hot-tag:hover { background-color: #e63946; color: #fff; }
 
-.hot-tag:hover {
-  background-color: #e63946;
-  color: #fff;
-}
-
-/* Navigation Links Specific */
-.nav-links-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); /* Slightly wider */
-    gap: 15px;
-}
-
+/* Navigation Links */
+.nav-links-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; }
 .nav-link-card {
-    background-color: #f8f9fa;
-    border: 1px solid #e9ecef;
-    border-radius: 6px;
-    padding: 15px;
-    text-align: center;
-    text-decoration: none;
-    color: #333;
-    font-size: 0.95em;
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
-    font-weight: 500;
+    background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; padding: 15px;
+    text-align: center; text-decoration: none; color: #333; font-size: 0.95em;
+    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease; font-weight: 500;
+    word-break: break-all;
 }
+.nav-link-card:hover { box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); transform: translateY(-2px); color: #e63946; border-color: #e63946; }
+.add-link-card { color: #adb5bd; border-style: dashed; display: flex; align-items: center; justify-content: center; font-weight: normal; font-size: 1.8em; }
+.add-link-card:hover { color: #e63946; border-color: #e63946; border-style: dashed; }
 
-.nav-link-card:hover {
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    transform: translateY(-2px);
-    color: #e63946;
-    border-color: #e63946;
-}
+/* AI Chat Placeholder */
+.ai-chat-placeholder .chat-interface { border: 1px solid #e0e0e0; border-radius: 6px; height: 300px; display: flex; flex-direction: column; }
+.chat-messages { flex-grow: 1; padding: 15px; overflow-y: auto; background-color: #f8f9fa; }
+.chat-messages p { margin-bottom: 10px; font-size: 0.9em; line-height: 1.5; }
+.chat-input-area { display: flex; border-top: 1px solid #e0e0e0; padding: 10px; background-color: #fff; }
+.chat-input-area input { flex-grow: 1; border: 1px solid #ced4da; border-radius: 4px; padding: 8px 10px; margin-right: 10px; outline: none; }
+.chat-input-area input:focus { border-color: #e63946; box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.2); }
+.chat-input-area button { padding: 8px 15px; background: #e63946; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s ease; }
+.chat-input-area button:hover { background: #d62828; }
 
-.add-link-card {
-    color: #adb5bd;
-    border-style: dashed;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: normal;
-}
-.add-link-card:hover {
-    color: #e63946;
-    border-color: #e63946;
-    border-style: dashed; /* Keep dashed on hover */
-}
+/* News Feed Placeholder */
+.news-feed-placeholder .news-list { list-style: none; padding: 0; }
+.news-list li { padding: 8px 0; border-bottom: 1px dashed #eee; }
+.news-list li:last-child { border-bottom: none; }
+.news-list li a { text-decoration: none; color: #337ab7; font-size: 0.95em; }
+.news-list li a:hover { text-decoration: underline; color: #e63946; }
 
-
-/* AI Chat Placeholder Specific */
-.ai-chat-placeholder .chat-interface {
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  height: 300px; /* Example height */
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-messages {
-  flex-grow: 1;
-  padding: 15px;
-  overflow-y: auto;
-  background-color: #f8f9fa; /* Light background for messages */
-}
-.chat-messages p {
-    margin-bottom: 10px;
-    font-size: 0.9em;
-    line-height: 1.5;
-}
-
-.chat-input-area {
-  display: flex;
-  border-top: 1px solid #e0e0e0;
-  padding: 10px;
-  background-color: #fff; /* White input area */
-}
-
-.chat-input-area input {
-  flex-grow: 1;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
-  padding: 8px 10px;
-  margin-right: 10px;
-  outline: none;
-}
-.chat-input-area input:focus {
-    border-color: #e63946;
-    box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.2);
-}
-
-.chat-input-area button {
-    padding: 8px 15px;
-    background: #e63946;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-.chat-input-area button:hover {
-    background: #d62828;
-}
-
-
-/* News Feed Placeholder Specific */
-.news-feed-placeholder .news-list {
-  list-style: none;
-  padding: 0;
-}
-
-.news-list li {
-  padding: 8px 0;
-  border-bottom: 1px dashed #eee; /* Dashed separator */
-}
-.news-list li:last-child {
-    border-bottom: none;
-}
-
-.news-list li a {
-  text-decoration: none;
-  color: #337ab7;
-  font-size: 0.95em;
-}
-
-.news-list li a:hover {
-  text-decoration: underline;
-  color: #e63946;
-}
-
-/* Footer Styles */
+/* Footer */
 .main-footer {
   padding: 15px 30px;
   text-align: center;
@@ -808,64 +733,131 @@ html, body { /* Apply to html too for full height */
   color: #888;
   background-color: #ffffff;
   border-top: 1px solid #e0e0e0;
-  flex-shrink: 0; /* Prevent shrinking */
+  flex-shrink: 0;
   line-height: 1.6;
 }
+.main-footer a { color: #666; text-decoration: none; margin: 0 3px; }
+.main-footer a:hover { color: #e63946; text-decoration: underline; }
+.main-footer .separator { margin: 0 5px; color: #ccc; }
 
-.main-footer a {
-    color: #666;
-    text-decoration: none;
-    margin: 0 3px; /* Add small margin around links */
-}
-.main-footer a:hover {
-    color: #e63946;
-    text-decoration: underline;
-}
-
-.main-footer .separator {
-    margin: 0 5px; /* Adjust separator margin */
-    color: #ccc;
-}
-
-/* Sponsor Modal Styles (Basic) */
+/* Sponsor Modal */
 .sponsor-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0,0,0,0.6);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 1000; padding: 20px;
 }
-
 .modal-content {
-  background: white;
-  padding: 30px;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  max-width: 500px;
-  width: 90%;
+  background: white; padding: 30px; border-radius: 12px;
+  display: flex; flex-direction: column; gap: 20px;
+  max-width: 500px; width: 100%;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
 }
-
+.sponsor-qr-container {
+   display: flex;
+   gap: 20px;
+   justify-content: center;
+   flex-wrap: wrap;
+}
+.sponsor-qr-container img {
+    width: 180px;
+    max-width: 45%;
+    height: auto;
+    border: 1px solid #eee;
+}
 .close-modal-button {
-    padding: 10px 20px;
-    background: #6c757d;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    align-self: center; /* Center button */
-    margin-top: 10px;
+    padding: 10px 20px; background: #6c757d; color: white; border: none;
+    border-radius: 6px; cursor: pointer; align-self: center; margin-top: 10px;
     transition: background-color 0.2s ease;
 }
-.close-modal-button:hover {
-    background: #5a6268;
+.close-modal-button:hover { background: #5a6268; }
+
+/* Mobile Styles */
+.mobile-nav-toggle { display: none; }
+.mobile-close-btn { display: none; }
+.mobile-nav-overlay { display: none; }
+.desktop-hidden { display: none; }
+.desktop-only { display: inline-flex; }
+.mobile-hidden { display: inline; }
+
+/* Breakpoint */
+@media (max-width: 768px) {
+  .page-container { /* No change needed here */ }
+
+  /* Sidebar Mobile */
+  .sidebar {
+    position: fixed; left: -260px; top: 0; bottom: 0; height: 100%;
+    z-index: 1001; width: 250px; transition: left 0.3s ease-in-out;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1); border-right: none;
+  }
+  .sidebar.mobile-open { left: 0; }
+  .sidebar-header { justify-content: space-between; }
+
+  /* Mobile Nav Toggle (Hamburger) */
+  .mobile-nav-toggle {
+    display: flex; flex-direction: column; justify-content: space-around;
+    width: 30px; height: 25px; background: transparent; border: none;
+    cursor: pointer; padding: 0; margin-right: 15px; order: -1;
+  }
+  .mobile-nav-toggle span { width: 100%; height: 3px; background-color: #555; border-radius: 2px; transition: all 0.3s linear; }
+  .page-container.mobile-nav-active .mobile-nav-toggle span:nth-child(1) { transform: rotate(45deg) translate(5px, 6px); }
+  .page-container.mobile-nav-active .mobile-nav-toggle span:nth-child(2) { opacity: 0; }
+  .page-container.mobile-nav-active .mobile-nav-toggle span:nth-child(3) { transform: rotate(-45deg) translate(5px, -6px); }
+
+  .mobile-close-btn { display: block; background: none; border: none; font-size: 2em; color: #888; cursor: pointer; padding: 0 15px; }
+
+  .mobile-nav-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 1000; display: block; }
+  .page-container:not(.mobile-nav-active) .mobile-nav-overlay { display: none; }
+
+  /* Adjust Main Content */
+  .main-content { width: 100%; margin-left: 0; }
+
+  /* Adjust Top Bar */
+  .top-bar { padding: 0 15px; height: 50px; }
+  .top-bar-left, .top-bar-right { gap: 10px; }
+  .desktop-only { display: none; }
+  .buy-item { padding: 4px 8px; font-size: 0.85em; }
+  .weather-widget, .calendar-widget { font-size: 0.8em; padding: 4px 8px; }
+
+  /* Adjust Content Body */
+  .content-body { padding: 15px; }
+  .main-title { font-size: 1.6em; margin-bottom: 20px; min-height: 30px; }
+  .cursor { bottom: 3px; }
+  .content-section { padding: 15px; margin-bottom: 20px; }
+  .section-title { font-size: 1.1em; margin-bottom: 15px; }
+
+  /* Adjust Search */
+  .search-section .search-box { padding: 3px 8px 3px 10px; border-radius: 20px; max-width: none; }
+  .search-section .search-input { padding: 8px; font-size: 0.9em; }
+  .search-section .search-button { padding: 6px 15px; font-size: 0.85em; }
+  .search-section .search-select { font-size: 0.85em; }
+  .language-switch { font-size: 0.8em; margin-top: 15px; }
+   /* Make language links slightly larger tap target on mobile */
+  .language-switch a { padding: 5px 2px; }
+
+  /* Adjust Nav Grid */
+  .nav-links-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+  .nav-link-card { padding: 12px; font-size: 0.85em; }
+  .add-link-card { font-size: 1.5em; }
+
+  /* Adjust Chat Placeholder */
+  .ai-chat-placeholder .chat-interface { height: 250px; }
+  .chat-input-area input { padding: 6px 8px; }
+  .chat-input-area button { padding: 6px 10px; }
+
+  /* Adjust News Feed */
+  .news-list li a { font-size: 0.9em; }
+
+  /* Adjust Footer */
+  .main-footer { padding: 15px; font-size: 0.75em; line-height: 1.5; }
+  .mobile-hidden { display: none; }
+  .desktop-hidden { display: block; content: ''; margin: -0.5em 0; }
+  .main-footer a img { height: 12px; }
+
+  /* Adjust Sponsor Modal */
+   .modal-content { padding: 20px; gap: 15px;}
+   .sponsor-qr-container { gap: 15px; }
+   .sponsor-qr-container img { width: 150px; max-width: 40%; }
+   .close-modal-button { padding: 8px 16px; }
 }
 
 </style>
