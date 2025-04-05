@@ -202,6 +202,7 @@ const determineTarget = (item) => {
     <!-- Sidebar -->
     <aside class="sidebar" :class="{ 'mobile-open': isMobileNavOpen }">
       <div class="sidebar-header">
+        <img src="/img/avatar.jpg" alt="头像" class="sidebar-avatar">
         <span class="logo">玺朽</span>
         <button class="mobile-close-btn" @click="closeMobileNav">×</button>
       </div>
@@ -448,14 +449,25 @@ html, body {
 }
 
 .sidebar-header {
-  padding: 0 20px;
+  padding: 0 15px; /* 稍微调整 padding 以适应头像 */
   text-align: center;
   border-bottom: 1px solid #e0e0e0;
   height: 60px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  /* justify-content: center; <-- 从 center 改为 space-between 或 flex-start */
+  justify-content: flex-start; /* 让元素从左开始排列 */
+  gap: 10px; /* 在头像和 Logo 之间添加间距 */
   flex-shrink: 0;
+}
+
+/* --- 新增头像样式 --- */
+.sidebar-avatar {
+  width: 80px; /* 头像宽度 */
+  height: 80px; /* 头像高度 */
+  border-radius: 50%; /* 圆形 */
+  object-fit: cover; /* 保证图片不变形 */
+  flex-shrink: 0; /* 防止头像被压缩 */
 }
 
 .logo {
