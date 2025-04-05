@@ -12,7 +12,7 @@ const navItems = ref([
   { title: 'AI 聊天', icon: '💬', link: '#chat-section', internal: true, section: 'main' }, // Placeholder
   { title: '今日热搜', icon: '🔥', link: '#hotsearch-section', internal: true, section: 'main' }, // Links to hot tags
   // Extras Section
-  { title: '个人博客', icon: '✍️', link: '/blog', internal: true, section: 'extras' }, // Internal Vue Route
+  { title: '个人博客', icon: '✍️', link: '/blog', internal: false, section: 'extras' }, //  Set internal: false 
   { title: '玺朽的砂糖', icon: '💖', link: '/love', internal: true, section: 'extras' }, // Internal Vue Route, moved here
   { title: '新闻资讯', icon: '📰', link: '#news-section', internal: true, section: 'extras' }, // Placeholder
   // User Section
@@ -126,6 +126,29 @@ onBeforeUnmount(() => {
   clearTimeout(typingInterval); // Cleanup
 });
 
+const handleClick = (event, clickHandler) => {
+  // If a specific click handler function is provided for the item...
+  if (clickHandler && typeof clickHandler === 'function') {
+    event.preventDefault(); // Prevent the default link behavior (like navigating to '#')
+    clickHandler();       // Execute the custom handler (e.g., showSponsor)
+  }
+  // Otherwise, do nothing here, allowing the browser's default link navigation
+  // for links like '/blog' or external http links.
+}
+
+const determineTarget = (item) => {
+  // Open external http/https links in a new tab
+  if (item.link.startsWith('http')) {
+    return '_blank';
+  }
+  // Open non-internal root-relative links (like '/blog') in the same tab, causing full navigation
+  if (item.internal === false && item.link.startsWith('/')) {
+     return '_self'; // Or '_blank' if you want the blog in a new tab
+  }
+  // Keep section links (#) and internal Vue router links in the same tab
+  return '_self';
+}
+
 </script>
 
 <template>
@@ -154,27 +177,38 @@ onBeforeUnmount(() => {
         <div class="nav-separator"></div>
          <!-- Extras Navigation Section -->
          <ul class="nav-group">
-           <li v-for="(item, index) in groupedNavItems.extras" :key="'extras-'+index" :class="{ active: false }">
-              <router-link v-if="item.internal && item.link.startsWith('/')" :to="item.link">
-                <span class="nav-icon">{{ item.icon }}</span>
-                <span class="nav-text">{{ item.title }}</span>
-             </router-link>
-             <a v-else :href="item.link" @click.prevent="item.click ? item.click() : null" :target="item.link.startsWith('http') ? '_blank' : '_self'">
+        <!-- Inside the <ul class="nav-group"> for 'extras' section -->
+          <li v-for="(item, index) in groupedNavItems.extras" :key="'extras-'+index" :class="{ active: false }">
+            <!-- Use router-link ONLY for internal Vue routes starting with '/' AND marked internal: true -->
+            <router-link v-if="item.internal === true && item.link.startsWith('/')" :to="item.link">
+              <span class="nav-icon">{{ item.icon }}</span>
+              <span class="nav-text">{{ item.title }}</span>
+            </router-link>
+            <!-- Use <a> for:
+                  - External links (http...)
+                  - Section links (#...)
+                  - Non-internal root-relative links (/blog)
+                  - Links with click handlers (# + click)
+            -->
+            <a v-else
+               :href="item.link"
+               @click="item.click ? handleClick($event, item.click) : null"  
+               :target="determineTarget(item)">
+              <span class="nav-icon">{{ item.icon }}</span>
+              <span class="nav-text">{{ item.title }}</span>
+            </a>
+         </li>
+
+        <!-- Repeat similar logic adjustment for the 'main' and 'user' sections if needed -->
+        <!-- Example for 'user' section (Sponsor link): -->
+         <li v-for="(item, index) in groupedNavItems.user" :key="'user-'+index" :class="{ active: false }">
+             <a :href="item.link"
+                @click="item.click ? handleClick($event, item.click) : null" 
+                :target="determineTarget(item)">
                <span class="nav-icon">{{ item.icon }}</span>
                <span class="nav-text">{{ item.title }}</span>
              </a>
-           </li>
-         </ul>
-         <div class="nav-separator"></div>
-         <!-- User/Settings Section -->
-         <ul class="nav-group">
-           <li v-for="(item, index) in groupedNavItems.user" :key="'user-'+index" :class="{ active: false }">
-             <!-- Sponsor link is handled by click, href='#' prevents navigation -->
-             <a :href="item.link" @click.prevent="item.click ? item.click() : null">
-               <span class="nav-icon">{{ item.icon }}</span>
-               <span class="nav-text">{{ item.title }}</span>
-             </a>
-           </li>
+         </li>
          </ul>
       </nav>
       <div class="sidebar-footer">
