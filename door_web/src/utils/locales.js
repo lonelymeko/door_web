@@ -59,6 +59,20 @@ export const locales = {
       navLinkYuketang: '雨课堂',
       navLinkDeepseek: 'Deepseek Chat',
       navLinkMoji: 'MOJI辞書',
+      // Weather Related
+      weatherLoading: '正在加载天气...',
+      weatherError: '无法加载天气信息',
+      weatherWind: '风力',
+      weatherWindDirection: '风向',
+      weatherHumidity: '湿度',
+      weatherTempUnit: '°C',
+      weatherWindPowerUnit: '级', // Wind power level unit
+      weatherRequestingPermission: '正在请求位置权限...',
+      weatherPermissionDenied: '您拒绝了位置权限，无法获取当地天气。',
+      weatherPositionUnavailable: '无法获取当前位置信息。',
+      weatherPositionTimeout: '获取位置信息超时。',
+      weatherFetchingAdcode: '正在解析位置...', // Changed wording slightly
+      weatherAdcodeError: '无法解析位置。',
     },
     // --- English ---
     'en-US': {
@@ -119,6 +133,20 @@ export const locales = {
       navLinkYuketang: 'Yuketang',
       navLinkDeepseek: 'Deepseek Chat',
       navLinkMoji: 'MOJI辞書', // Keep original if it's a proper name
+             // Weather Related
+             weatherLoading: 'Loading weather...',
+             weatherError: 'Could not load weather info',
+             weatherWind: 'Wind',
+             weatherWindDirection: 'Direction',
+             weatherHumidity: 'Humidity',
+             weatherTempUnit: '°C',
+             weatherWindPowerUnit: 'Level',
+             weatherRequestingPermission: 'Requesting location permission...',
+             weatherPermissionDenied: 'Location permission denied. Cannot fetch local weather.',
+             weatherPositionUnavailable: 'Unable to retrieve current location.',
+             weatherPositionTimeout: 'Timeout while retrieving location.',
+             weatherFetchingAdcode: 'Resolving location...',
+             weatherAdcodeError: 'Failed to resolve location.',
     },
     // --- Japanese (日本語) ---
     'ja-JP': {
@@ -179,5 +207,19 @@ export const locales = {
       navLinkYuketang: '雨课堂', // Keep original name?
       navLinkDeepseek: 'Deepseek Chat',
       navLinkMoji: 'MOJI辞書', // Keep original name
+             // Weather Related
+             weatherLoading: '天気を読み込み中...',
+             weatherError: '天気情報を読み込めませんでした',
+             weatherWind: '風力',
+             weatherWindDirection: '風向',
+             weatherHumidity: '湿度',
+             weatherTempUnit: '°C',
+             weatherWindPowerUnit: 'レベル',
+             weatherRequestingPermission: '位置情報の許可を要求しています...',
+             weatherPermissionDenied: '位置情報の許可が拒否されました。地域の天気を取得できません。',
+             weatherPositionUnavailable: '現在の位置情報を取得できません。',
+             weatherPositionTimeout: '位置情報の取得がタイムアウトしました。',
+             weatherFetchingAdcode: '位置情報を解決しています...',
+             weatherAdcodeError: '位置情報の解決に失敗しました。',
     }
   };

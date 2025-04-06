@@ -1,10 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { locales } from '/src/utils/locales.js' // 确保路径正确!
-
+import { ref, computed, onMounted, onBeforeUnmount,getCurrentInstance } from 'vue'
+import { locales } from '/src/utils/locales.js'
 // --- Language State ---
 const currentLanguage = ref('zh-CN'); // Default language
-
+const instance = getCurrentInstance();
+const WEATHER_API_KEY = instance?.appContext.config.globalProperties.WEATHER_API_KEY;
 // Translation helper function
 const t = (key, replacements = {}) => {
   const lang = currentLanguage.value;
@@ -18,6 +18,20 @@ const t = (key, replacements = {}) => {
   return translation;
 };
 
+// --- Weather State ---
+const weatherInfo = ref(t('weatherLoading')); // Initial state using t()
+const rawWeatherData = ref(null);
+const WEATHER_STORAGE_KEY = 'userCityId'; // localStorage key for CID
+// --- Geolocation Specific State --- // <<< 添加下面这两行
+const geolocationStatus = ref('idle'); // idle, pending_permission, pending_regeo, success, error
+const geolocationError = ref('');   // Stores specific error message
+
+// // --- Get API Key from Global Properties ---
+// const instance = getCurrentInstance();
+// const WEATHER_API_KEY = WEATHER_API_KEY;
+
+
+
 // Function to change language
 const changeLanguage = (lang) => {
   currentLanguage.value = lang;
@@ -26,6 +40,176 @@ const changeLanguage = (lang) => {
   // Also update calendar/date formats if needed
   calendarInfo.value = new Date().toLocaleDateString(lang); // Update calendar format
 };
+// --- Weather Fetching Logic ---
+
+// --- Weather Icon Mapping Function ---  <-- ADDED
+const getWeatherIcon = (weatherCondition) => {
+  if (!weatherCondition) return '❓'; // Default for null/undefined
+  const condition = String(weatherCondition).toLowerCase(); // Ensure string and lower case
+
+  // Prioritize more specific conditions first if needed
+  if (condition.includes('雷阵雨')) return '⛈️';
+  if (condition.includes('雷')) return '⚡';
+  if (condition.includes('雨夹雪')) return '🌨️';
+  if (condition.includes('雪')) return '❄️';
+  if (condition.includes('雨')) return '🌧️';
+  if (condition.includes('阴')) return '☁️'; // Cloudy
+  if (condition.includes('多云')) return '🌥️'; // Partly cloudy
+  if (condition.includes('晴')) return '☀️'; // Sunny
+  if (condition.includes('雾') || condition.includes('霾')) return '🌫️'; // Fog/Haze
+  if (condition.includes('风') || condition.includes('吹')) return '🌬️'; // Windy
+
+  console.warn("未匹配的天气图标:", weatherCondition); // Log unmatched conditions
+  return '🌍'; // Generic fallback
+}
+// --- API Calls using Vite Proxy ---
+
+// Fetch Adcode using Coordinates via Vite Proxy
+const fetchAdcodeFromCoords = async (latitude, longitude) => {
+    if (!WEATHER_API_KEY) return null; // Need key
+
+    console.log(`请求 Adcode: lat=${latitude}, lon=${longitude}`);
+    geolocationStatus.value = 'pending_regeo';
+    weatherInfo.value = t('weatherFetchingAdcode');
+    try {
+        // Construct URL using the proxy prefix defined in vite.config.js
+        // Pass necessary Gaode params (key, location)
+        const proxyRegeoUrl = `/proxy-regeo?output=json&location=${longitude},${latitude}&key=${WEATHER_API_KEY}&radius=1000&extensions=base`;
+
+        console.log('调用代理 Regeo URL:', proxyRegeoUrl);
+        const response = await fetch(proxyRegeoUrl); // Fetch via Vite proxy
+
+        if (!response.ok) { // Checks if the proxy itself responded ok (e.g., 200)
+            throw new Error(`代理 Regeo 请求失败: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        console.log('代理 Regeo 响应数据:', data);
+
+        // Check Gaode's internal status
+        if (data.status === '1' && data.regeocode) {
+            const adcode = data.regeocode.addressComponent?.adcode;
+            if (adcode) {
+                console.log('从代理获取到 Adcode:', adcode);
+                return adcode;
+            } else {
+                 throw new Error('高德 Regeo 成功，但未找到 Adcode');
+            }
+        } else {
+            throw new Error(`高德 Regeo API 错误: ${data.info || '未知错误'}`);
+        }
+    } catch (error) {
+        console.error('获取 Adcode 失败:', error);
+        geolocationStatus.value = 'error';
+        geolocationError.value = t('weatherAdcodeError');
+        weatherInfo.value = geolocationError.value;
+        return null;
+    }
+};
+
+// Fetch Weather Data using Adcode via Vite Proxy
+const fetchWeatherDataByAdcode = async (adcode) => {
+    if (!WEATHER_API_KEY || !adcode) return null;
+
+    console.log(`请求天气数据，Adcode: ${adcode}`);
+    weatherInfo.value = t('weatherLoading'); // Show specific weather loading
+    try {
+        // Construct URL using the proxy prefix defined in vite.config.js
+        const proxyWeatherUrl = `/proxy-weather?city=${adcode}&key=${WEATHER_API_KEY}`;
+
+        console.log('调用代理 Weather URL:', proxyWeatherUrl);
+        const response = await fetch(proxyWeatherUrl); // Fetch via Vite proxy
+
+        if (!response.ok) {
+             throw new Error(`代理 Weather 请求失败: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        console.log('代理 Weather 响应数据:', data);
+
+        // Check Gaode's internal status
+        if (data.status === '1' && data.lives && data.lives.length > 0) {
+            console.log('成功获取天气数据:', data.lives[0]);
+            rawWeatherData.value = data.lives[0]; // <<< *** STORE WEATHER DATA HERE ***
+            geolocationStatus.value = 'success';
+            weatherInfo.value = ''; // Clear status message on success
+            return data.lives[0];
+        } else {
+             throw new Error(`高德 Weather API 错误: ${data.info || '未知错误'}`);
+        }
+    } catch (error) {
+        console.error('获取天气数据失败:', error);
+        geolocationStatus.value = 'error';
+        // Keep the more specific adcode error if it happened earlier
+        if (!geolocationError.value) {
+            geolocationError.value = t('weatherError'); // General weather error
+        }
+        weatherInfo.value = geolocationError.value;
+        rawWeatherData.value = null; // Clear any stale data
+        return null;
+    }
+};
+// --- Geolocation Request Logic ---
+const requestLocationAndWeather = () => {
+    if (!('geolocation' in navigator)) {
+        console.error('浏览器不支持地理位置。');
+        geolocationStatus.value = 'error';
+        geolocationError.value = t('weatherPositionUnavailable'); // Or a new key for "not supported"
+        weatherInfo.value = geolocationError.value;
+        return;
+    }
+    if (!WEATHER_API_KEY) {
+         console.error("无法获取天气：缺少高德 API Key。");
+         geolocationStatus.value = 'error';
+         geolocationError.value = t('weatherError'); // Or a key for "config error"
+         weatherInfo.value = geolocationError.value;
+         return;
+    }
+
+    console.log('请求浏览器地理位置权限...');
+    geolocationStatus.value = 'pending_permission';
+    weatherInfo.value = t('weatherRequestingPermission');
+
+    navigator.geolocation.getCurrentPosition(
+        async (position) => { // Success Callback
+            const { latitude, longitude } = position.coords;
+            console.log(`获取到坐标: Lat=${latitude}, Lon=${longitude}`);
+
+            // Now get adcode using the coordinates
+            const adcode = await fetchAdcodeFromCoords(latitude, longitude);
+
+            if (adcode) {
+                // If adcode found, get weather
+                await fetchWeatherDataByAdcode(adcode);
+            }
+            // Errors during adcode/weather fetch are handled within those functions
+
+        },
+        (error) => { // Error Callback
+            console.error('地理位置错误:', error);
+            geolocationStatus.value = 'error';
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    geolocationError.value = t('weatherPermissionDenied');
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    geolocationError.value = t('weatherPositionUnavailable');
+                    break;
+                case error.TIMEOUT:
+                    geolocationError.value = t('weatherPositionTimeout');
+                    break;
+                default:
+                    geolocationError.value = t('weatherPositionUnavailable'); // Generic fallback
+                    break;
+            }
+            weatherInfo.value = geolocationError.value; // Update the main status display
+        },
+        { // Options
+            enableHighAccuracy: false, // Faster, less battery, usually good enough for city level
+            timeout: 10000,         // 10 seconds timeout
+            maximumAge: 600000      // Allow cached position up to 10 minutes old
+        }
+    );
+};
+
 
 // --- Add State for Mobile Nav ---
 const isMobileNavOpen = ref(false);
@@ -75,7 +259,7 @@ const searchQuery = ref('');
 const showSponsor = ref(false);
 const hotSearchList = ref(['Vue 3', 'Tailwind CSS', '天气 API', 'DeepSeek', '大模型', '备案流程', 'JavaScript']); // Hot search terms usually aren't translated
 const currentYear = new Date().getFullYear();
-const weatherInfo = ref("☀️ 晴朗 25°C"); // Weather might need a more complex solution or API that supports language
+// const weatherInfo = ref("☀️ 晴朗 25°C"); // Weather might need a more complex solution or API that supports language
 const calendarInfo = ref(new Date().toLocaleDateString(currentLanguage.value)); // Use current lang for initial format
 const newsHeadlines = ref([ // Example static news - better fetched from an API
     { id: 1, titleKey: "news1Title", title: "科技巨头发布新款 AI 芯片" },
@@ -158,25 +342,29 @@ const groupedNavItems = computed(() => {
 });
 
 
+
+// --- Lifecycle Hooks ---
 onMounted(() => {
-  // Check localStorage for saved language preference
-  // const savedLang = localStorage.getItem('preferredLang');
-  // if (savedLang && locales[savedLang]) {
-  //   currentLanguage.value = savedLang;
-  // }
-  calendarInfo.value = new Date().toLocaleDateString(currentLanguage.value); // Ensure initial format correct
-  clearTimeout(typingInterval); // Ensure clean start
-  // Reset typewriter state as quotes might change
+  calendarInfo.value = new Date().toLocaleDateString(currentLanguage.value);
+
+  // Request location and subsequently weather
+  requestLocationAndWeather();
+
+  // Start typewriter regardless of weather outcome, but ensure it's cleared/reset properly
+  console.log("启动打字机效果...");
+  clearTimeout(typingInterval);
   currentQuoteIndex.value = 0;
   charIndex = 0;
   isDeleting = false;
-  displayedTitle.value = ''; // Clear initially
+  displayedTitle.value = '';
   typeWriterEffect();
 });
 
 onBeforeUnmount(() => {
+  console.log("组件即将卸载，清除打字机定时器。");
   clearTimeout(typingInterval);
 });
+
 
 const handleClick = (event, clickHandler) => {
   if (clickHandler && typeof clickHandler === 'function') {
@@ -266,9 +454,6 @@ const determineTarget = (item) => {
                <span class="top-bar-item desktop-only">{{ t('webPlugin') }}</span>
             </div>
             <div class="top-bar-right">
-              <span class="top-bar-item weather-widget">
-                 {{ weatherInfo }} <!-- Weather needs separate handling -->
-               </span>
                <span class="top-bar-item calendar-widget">
                  📅 {{ calendarInfo }} <!-- Calendar format updates automatically -->
                </span>
@@ -276,6 +461,27 @@ const determineTarget = (item) => {
                <span class="top-bar-item buy-item">{{ t('buyPro') }}</span>
             </div>
       </header>
+  <!-- Weather Display Container -->
+  <div class="weather-display-container">
+          <!-- Show detailed weather IF rawWeatherData is available -->
+          <div v-if="rawWeatherData" class="weather-content">
+              <span class="weather-icon">{{ getWeatherIcon(rawWeatherData.weather) }}</span>
+              <span class="weather-city">{{ rawWeatherData.city }}:</span>
+              <span class="weather-condition">{{ rawWeatherData.weather }}</span>
+              <span class="weather-temp">{{ rawWeatherData.temperature_float }}{{ t('weatherTempUnit') }}</span>
+              <span class="separator mobile-hidden">|</span>
+              <span class="weather-detail">{{ t('weatherWindDirection') }}: {{ rawWeatherData.winddirection }}</span>
+              <span class="separator mobile-hidden">|</span>
+              <span class="weather-detail">{{ t('weatherWind') }}: {{ rawWeatherData.windpower }} {{ t('weatherWindPowerUnit') }}</span>
+               <span class="separator mobile-hidden">|</span>
+              <span class="weather-detail">{{ t('weatherHumidity') }}: {{ rawWeatherData.humidity_float }}%</span>
+          </div>
+          <!-- Otherwise, show the current status/error message -->
+          <div v-else class="weather-loading-error">
+              {{ weatherInfo }}
+          </div>
+      </div>
+      <!-- ======================================== -->
 
       <!-- Content Body -->
       <div class="content-body">
@@ -783,6 +989,23 @@ html, body {
 }
 .close-modal-button:hover { background: #5a6268; }
 
+
+.weather-widget {
+  font-size: 0.85em; /* Slightly smaller font maybe */
+  white-space: normal; /* Allow wrapping if needed */
+  /* Add any other specific styles */
+   max-width: 300px; /* Prevent it from getting too wide */
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap; /* Or allow wrapping: white-space: normal; */
+   text-align: right; /* Align text to the right */
+}
+    /* Ensure the loading/error message style is reasonable */
+    .weather-loading-error {
+      color: #888;
+      padding: 5px 0; /* Match padding if needed */
+      font-style: italic; /* Optional: make it italic */
+    }
 /* Mobile Styles */
 .mobile-nav-toggle { display: none; }
 .mobile-close-btn { display: none; }
@@ -870,6 +1093,10 @@ html, body {
    .sponsor-qr-container { gap: 15px; }
    .sponsor-qr-container img { width: 150px; max-width: 40%; }
    .close-modal-button { padding: 8px 16px; }
+   .weather-widget {
+        font-size: 0.75em;
+        max-width: 150px; /* Adjust for smaller screens */
+    }
 }
 
 </style>
