@@ -1,279 +1,409 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount,getCurrentInstance } from 'vue'
+// --- 这个 <script setup> 部分保持不变 (包含 AI 功能逻辑) ---
+import { ref, computed, onMounted, onBeforeUnmount, getCurrentInstance, watch, nextTick } from 'vue'
 import { locales } from '/src/utils/locales.js'
-// --- Language State ---
-const currentLanguage = ref('zh-CN'); // Default language
+import OpenAI from 'openai';
+import { marked } from 'marked';
+
+// --- Constants ---
+const DAILY_SUGGESTION_STORAGE_KEY = 'dailyTravelSuggestion';
+const CHAT_HISTORY_STORAGE_KEY = 'aiChatHistory';
+
+// --- Instance and Global Properties ---
 const instance = getCurrentInstance();
 const WEATHER_API_KEY = instance?.appContext.config.globalProperties.WEATHER_API_KEY;
-// Translation helper function
+const AI_API_KEY = instance?.appContext.config.globalProperties.AI_API_KEY;
+const AI_API_URL = instance?.appContext.config.globalProperties.AI_API_URL;
+const AI_MODEL = instance?.appContext.config.globalProperties.AI_MODEL;
+
+// --- OpenAI Client Initialization ---
+let openai = null;
+if (AI_API_KEY && AI_API_URL && AI_MODEL) {
+  try {
+      openai = new OpenAI({
+        apiKey: AI_API_KEY,
+        baseURL: AI_API_URL,
+        dangerouslyAllowBrowser: true,
+      });
+      console.log("OpenAI client initialized for DeepSeek.");
+  } catch (error) {
+      console.error("Failed to initialize OpenAI client:", error);
+  }
+} else {
+  console.error("AI API Key, URL, or Model is missing. AI features will be disabled.");
+}
+
+// --- Language State ---
+const currentLanguage = ref('zh-CN');
 const t = (key, replacements = {}) => {
   const lang = currentLanguage.value;
-  let translation = locales[lang]?.[key] || locales['zh-CN']?.[key] || key; // Fallback to Chinese, then key
-
-  // Handle replacements like {year}
+  let translation = locales[lang]?.[key] || locales['zh-CN']?.[key] || key;
   Object.keys(replacements).forEach(repKey => {
     translation = translation.replace(`{${repKey}}`, replacements[repKey]);
   });
-
   return translation;
 };
-
-// --- Weather State ---
-const weatherInfo = ref(t('weatherLoading')); // Initial state using t()
-const rawWeatherData = ref(null);
-const WEATHER_STORAGE_KEY = 'userCityId'; // localStorage key for CID
-// --- Geolocation Specific State --- // <<< 添加下面这两行
-const geolocationStatus = ref('idle'); // idle, pending_permission, pending_regeo, success, error
-const geolocationError = ref('');   // Stores specific error message
-
-// // --- Get API Key from Global Properties ---
-// const instance = getCurrentInstance();
-// const WEATHER_API_KEY = WEATHER_API_KEY;
-
-
-
-// Function to change language
 const changeLanguage = (lang) => {
   currentLanguage.value = lang;
-  // Optionally, save preference to localStorage
-  // localStorage.setItem('preferredLang', lang);
-  // Also update calendar/date formats if needed
-  calendarInfo.value = new Date().toLocaleDateString(lang); // Update calendar format
+  calendarInfo.value = new Date().toLocaleDateString(lang);
+  loadDailySuggestion();
 };
-// --- Weather Fetching Logic ---
 
-// --- Weather Icon Mapping Function ---  <-- ADDED
+// --- Weather State & Logic ---
+const weatherInfo = ref(t('weatherLoading'));
+const rawWeatherData = ref(null);
+const geolocationStatus = ref('idle');
+const geolocationError = ref('');
 const getWeatherIcon = (weatherCondition) => {
-  if (!weatherCondition) return '❓'; // Default for null/undefined
-  const condition = String(weatherCondition).toLowerCase(); // Ensure string and lower case
-
-  // Prioritize more specific conditions first if needed
-  if (condition.includes('雷阵雨')) return '⛈️';
-  if (condition.includes('雷')) return '⚡';
-  if (condition.includes('雨夹雪')) return '🌨️';
-  if (condition.includes('雪')) return '❄️';
-  if (condition.includes('雨')) return '🌧️';
-  if (condition.includes('阴')) return '☁️'; // Cloudy
-  if (condition.includes('多云')) return '🌥️'; // Partly cloudy
-  if (condition.includes('晴')) return '☀️'; // Sunny
-  if (condition.includes('雾') || condition.includes('霾')) return '🌫️'; // Fog/Haze
-  if (condition.includes('风') || condition.includes('吹')) return '🌬️'; // Windy
-
-  console.warn("未匹配的天气图标:", weatherCondition); // Log unmatched conditions
-  return '🌍'; // Generic fallback
-}
-// --- API Calls using Vite Proxy ---
-
-// Fetch Adcode using Coordinates via Vite Proxy
+    if (!weatherCondition) return '❓';
+    const condition = String(weatherCondition).toLowerCase();
+    if (condition.includes('雷阵雨')) return '⛈️';
+    if (condition.includes('雷')) return '⚡';
+    if (condition.includes('雨夹雪')) return '🌨️';
+    if (condition.includes('雪')) return '❄️';
+    if (condition.includes('雨')) return '🌧️';
+    if (condition.includes('阴')) return '☁️';
+    if (condition.includes('多云')) return '🌥️';
+    if (condition.includes('晴')) return '☀️';
+    if (condition.includes('雾') || condition.includes('霾')) return '🌫️';
+    if (condition.includes('风') || condition.includes('吹')) return '🌬️';
+    console.warn("未匹配的天气图标:", weatherCondition);
+    return '🌍';
+};
 const fetchAdcodeFromCoords = async (latitude, longitude) => {
-    if (!WEATHER_API_KEY) return null; // Need key
-
-    console.log(`请求 Adcode: lat=${latitude}, lon=${longitude}`);
+    if (!WEATHER_API_KEY) return null;
     geolocationStatus.value = 'pending_regeo';
     weatherInfo.value = t('weatherFetchingAdcode');
     try {
-        // Construct URL using the proxy prefix defined in vite.config.js
-        // Pass necessary Gaode params (key, location)
         const proxyRegeoUrl = `/proxy-regeo?output=json&location=${longitude},${latitude}&key=${WEATHER_API_KEY}&radius=1000&extensions=base`;
-
-        console.log('调用代理 Regeo URL:', proxyRegeoUrl);
-        const response = await fetch(proxyRegeoUrl); // Fetch via Vite proxy
-
-        if (!response.ok) { // Checks if the proxy itself responded ok (e.g., 200)
-            throw new Error(`代理 Regeo 请求失败: ${response.status} ${response.statusText}`);
-        }
+        const response = await fetch(proxyRegeoUrl);
+        if (!response.ok) throw new Error(`Proxy Regeo request failed: ${response.status} ${response.statusText}`);
         const data = await response.json();
-        console.log('代理 Regeo 响应数据:', data);
-
-        // Check Gaode's internal status
         if (data.status === '1' && data.regeocode) {
             const adcode = data.regeocode.addressComponent?.adcode;
-            if (adcode) {
-                console.log('从代理获取到 Adcode:', adcode);
-                return adcode;
-            } else {
-                 throw new Error('高德 Regeo 成功，但未找到 Adcode');
-            }
+            if (adcode) return adcode;
+            else throw new Error('Gaode Regeo success, but no Adcode found');
         } else {
-            throw new Error(`高德 Regeo API 错误: ${data.info || '未知错误'}`);
+            throw new Error(`Gaode Regeo API error: ${data.info || 'Unknown error'}`);
         }
     } catch (error) {
-        console.error('获取 Adcode 失败:', error);
+        console.error('Failed to get Adcode:', error);
         geolocationStatus.value = 'error';
         geolocationError.value = t('weatherAdcodeError');
         weatherInfo.value = geolocationError.value;
         return null;
     }
 };
-
-// Fetch Weather Data using Adcode via Vite Proxy
 const fetchWeatherDataByAdcode = async (adcode) => {
     if (!WEATHER_API_KEY || !adcode) return null;
-
-    console.log(`请求天气数据，Adcode: ${adcode}`);
-    weatherInfo.value = t('weatherLoading'); // Show specific weather loading
+    weatherInfo.value = t('weatherLoading');
     try {
-        // Construct URL using the proxy prefix defined in vite.config.js
         const proxyWeatherUrl = `/proxy-weather?city=${adcode}&key=${WEATHER_API_KEY}`;
-
-        console.log('调用代理 Weather URL:', proxyWeatherUrl);
-        const response = await fetch(proxyWeatherUrl); // Fetch via Vite proxy
-
-        if (!response.ok) {
-             throw new Error(`代理 Weather 请求失败: ${response.status} ${response.statusText}`);
-        }
+        const response = await fetch(proxyWeatherUrl);
+        if (!response.ok) throw new Error(`Proxy Weather request failed: ${response.status} ${response.statusText}`);
         const data = await response.json();
-        console.log('代理 Weather 响应数据:', data);
-
-        // Check Gaode's internal status
         if (data.status === '1' && data.lives && data.lives.length > 0) {
-            console.log('成功获取天气数据:', data.lives[0]);
-            rawWeatherData.value = data.lives[0]; // <<< *** STORE WEATHER DATA HERE ***
+            rawWeatherData.value = data.lives[0];
             geolocationStatus.value = 'success';
-            weatherInfo.value = ''; // Clear status message on success
+            weatherInfo.value = '';
             return data.lives[0];
         } else {
-             throw new Error(`高德 Weather API 错误: ${data.info || '未知错误'}`);
+            throw new Error(`Gaode Weather API error: ${data.info || 'Unknown error'}`);
         }
     } catch (error) {
-        console.error('获取天气数据失败:', error);
+        console.error('Failed to get weather data:', error);
         geolocationStatus.value = 'error';
-        // Keep the more specific adcode error if it happened earlier
-        if (!geolocationError.value) {
-            geolocationError.value = t('weatherError'); // General weather error
-        }
+        if (!geolocationError.value) geolocationError.value = t('weatherError');
         weatherInfo.value = geolocationError.value;
-        rawWeatherData.value = null; // Clear any stale data
+        rawWeatherData.value = null;
         return null;
     }
 };
-// --- Geolocation Request Logic ---
 const requestLocationAndWeather = () => {
     if (!('geolocation' in navigator)) {
-        console.error('浏览器不支持地理位置。');
         geolocationStatus.value = 'error';
-        geolocationError.value = t('weatherPositionUnavailable'); // Or a new key for "not supported"
+        geolocationError.value = t('weatherGeolocationNotSupported');
         weatherInfo.value = geolocationError.value;
         return;
     }
     if (!WEATHER_API_KEY) {
-         console.error("无法获取天气：缺少高德 API Key。");
          geolocationStatus.value = 'error';
-         geolocationError.value = t('weatherError'); // Or a key for "config error"
+         geolocationError.value = t('weatherApiKeyMissing');
          weatherInfo.value = geolocationError.value;
          return;
     }
-
-    console.log('请求浏览器地理位置权限...');
     geolocationStatus.value = 'pending_permission';
     weatherInfo.value = t('weatherRequestingPermission');
-
     navigator.geolocation.getCurrentPosition(
-        async (position) => { // Success Callback
+        async (position) => {
             const { latitude, longitude } = position.coords;
-            console.log(`获取到坐标: Lat=${latitude}, Lon=${longitude}`);
-
-            // Now get adcode using the coordinates
             const adcode = await fetchAdcodeFromCoords(latitude, longitude);
-
             if (adcode) {
-                // If adcode found, get weather
                 await fetchWeatherDataByAdcode(adcode);
             }
-            // Errors during adcode/weather fetch are handled within those functions
-
         },
-        (error) => { // Error Callback
-            console.error('地理位置错误:', error);
+        (error) => {
+            console.error('Geolocation error:', error);
             geolocationStatus.value = 'error';
             switch (error.code) {
-                case error.PERMISSION_DENIED:
-                    geolocationError.value = t('weatherPermissionDenied');
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    geolocationError.value = t('weatherPositionUnavailable');
-                    break;
-                case error.TIMEOUT:
-                    geolocationError.value = t('weatherPositionTimeout');
-                    break;
-                default:
-                    geolocationError.value = t('weatherPositionUnavailable'); // Generic fallback
-                    break;
+                case error.PERMISSION_DENIED: geolocationError.value = t('weatherPermissionDenied'); break;
+                case error.POSITION_UNAVAILABLE: geolocationError.value = t('weatherPositionUnavailable'); break;
+                case error.TIMEOUT: geolocationError.value = t('weatherPositionTimeout'); break;
+                default: geolocationError.value = t('weatherPositionUnavailable'); break;
             }
-            weatherInfo.value = geolocationError.value; // Update the main status display
-        },
-        { // Options
-            enableHighAccuracy: false, // Faster, less battery, usually good enough for city level
-            timeout: 10000,         // 10 seconds timeout
-            maximumAge: 600000      // Allow cached position up to 10 minutes old
-        }
+            weatherInfo.value = geolocationError.value;
+        }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
     );
 };
 
+// --- Daily Suggestion State & Logic ---
+const dailySuggestionContent = ref('');
+const isSuggestionLoading = ref(false);
+const suggestionError = ref('');
+const suggestionPrompt = ref('');
 
-// --- Add State for Mobile Nav ---
+const getTodayDateString = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const clearOldSuggestions = () => {
+    const todayStr = getTodayDateString();
+    try {
+        const storedData = localStorage.getItem(DAILY_SUGGESTION_STORAGE_KEY);
+        if (storedData) {
+            const parsedData = JSON.parse(storedData);
+            if (parsedData.date !== todayStr) {
+                localStorage.removeItem(DAILY_SUGGESTION_STORAGE_KEY);
+                console.log("Cleared outdated daily suggestion from localStorage.");
+            }
+        }
+    } catch (e) {
+        console.error("Error reading/clearing daily suggestion from localStorage:", e);
+        localStorage.removeItem(DAILY_SUGGESTION_STORAGE_KEY);
+    }
+};
+
+const loadDailySuggestion = () => {
+  clearOldSuggestions();
+  const todayStr = getTodayDateString();
+  try {
+    const storedData = localStorage.getItem(DAILY_SUGGESTION_STORAGE_KEY);
+    if (storedData) {
+      const parsedData = JSON.parse(storedData);
+      if (parsedData.date === todayStr && parsedData.content) {
+        dailySuggestionContent.value = parsedData.content;
+        suggestionPrompt.value = parsedData.prompt || '';
+        console.log("Loaded daily suggestion from localStorage for", todayStr);
+        isSuggestionLoading.value = false;
+        suggestionError.value = '';
+        return true;
+      }
+    }
+  } catch (e) {
+    console.error("Error reading daily suggestion from localStorage:", e);
+    localStorage.removeItem(DAILY_SUGGESTION_STORAGE_KEY);
+  }
+  dailySuggestionContent.value = '';
+  return false;
+};
+
+const saveDailySuggestion = (content, promptUsed) => {
+  const todayStr = getTodayDateString();
+  const dataToStore = { date: todayStr, content: content, prompt: promptUsed };
+  try {
+    localStorage.setItem(DAILY_SUGGESTION_STORAGE_KEY, JSON.stringify(dataToStore));
+    console.log("Saved daily suggestion to localStorage for", todayStr);
+  } catch (e) {
+    console.error("Error saving daily suggestion to localStorage:", e);
+  }
+};
+
+const fetchDailySuggestion = async () => {
+  if (!openai) { suggestionError.value = t('aiClientNotInitialized'); return; }
+  if (!rawWeatherData.value) { suggestionError.value = t('aiWaitingForWeather'); return; }
+  if (isSuggestionLoading.value) return;
+
+  isSuggestionLoading.value = true;
+  suggestionError.value = '';
+  dailySuggestionContent.value = '';
+  const todayStr = getTodayDateString();
+  const weather = rawWeatherData.value;
+  const prompt = `根据以下信息，为今天 (${todayStr}) 写出详细的出行建议、今日黄历概览（例如：宜、忌、冲、煞、吉神方位等，简洁说明即可）和生活指数（例如：穿衣指数、运动指数、洗车指数等）：\n地点: ${weather.city} (${weather.province})\n天气: ${weather.weather}\n温度: ${weather.temperature}°C\n风向: ${weather.winddirection}\n风力: ${weather.windpower} 级\n湿度: ${weather.humidity}%\n\n请以友好的、略带调侃的语气提供建议，并使用Markdown格式化输出，重点内容适当加粗或使用列表。`;
+  suggestionPrompt.value = prompt;
+
+  try {
+    const stream = await openai.chat.completions.create({
+      model: AI_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      stream: true,
+      temperature: 0.7,
+    });
+
+    let fullContent = '';
+    for await (const chunk of stream) {
+      const contentPart = chunk.choices[0]?.delta?.content || '';
+      if (contentPart) {
+        fullContent += contentPart;
+        dailySuggestionContent.value = fullContent;
+      }
+    }
+    saveDailySuggestion(fullContent, prompt);
+    console.log("Successfully fetched and streamed daily suggestion.");
+
+  } catch (error) {
+    console.error('Error fetching daily suggestion:', error);
+    suggestionError.value = `${t('aiSuggestionError')}: ${error.message || 'Unknown error'}`;
+  } finally {
+    isSuggestionLoading.value = false;
+  }
+};
+
+watch(rawWeatherData, (newData) => {
+  if (newData) {
+    console.log("Weather data updated, checking/fetching daily suggestion.");
+    if (!loadDailySuggestion()) {
+      fetchDailySuggestion();
+    }
+  } else {
+    dailySuggestionContent.value = '';
+    suggestionError.value = '';
+    isSuggestionLoading.value = false;
+  }
+}, { immediate: false });
+
+// --- AI Chat State & Logic ---
+const chatMessagesContainer = ref(null);
+const chatMessages = ref([]);
+const chatInput = ref('');
+const isChatLoading = ref(false);
+const chatError = ref('');
+let messageIdCounter = 0;
+
+const systemPrompt = "你是玺朽的猫娘、你现在作为玺朽的导航的看板娘帮助来到导航的人回答问题、玺朽是大二的本科软件工程大学生。你的回答应该友好、乐于助人，带有一些猫娘的口癖（比如句尾带'喵~'，或者用'主人'称呼用户，但不要过度）。";
+
+const renderMarkdown = (text) => {
+  if (!text) return '';
+  try {
+    return marked.parse(text, { breaks: true, gfm: true });
+  } catch (e) {
+      console.error("Markdown parsing error:", e);
+      return text;
+  }
+};
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (chatMessagesContainer.value) {
+      chatMessagesContainer.value.scrollTop = chatMessagesContainer.value.scrollHeight;
+    }
+  });
+};
+
+const loadChatHistory = () => {
+    chatMessages.value = [ { role: 'assistant', content: t('aiGreeting'), id: messageIdCounter++ } ];
+    scrollToBottom();
+};
+
+const sendChatMessage = async () => {
+  const userInput = chatInput.value.trim();
+  if (!userInput || isChatLoading.value || !openai) {
+      if (!openai) chatError.value = t('aiClientNotInitialized');
+      return;
+  }
+
+  isChatLoading.value = true;
+  chatError.value = '';
+  chatMessages.value.push({ role: 'user', content: userInput, id: messageIdCounter++ });
+  chatInput.value = '';
+  scrollToBottom();
+
+  const apiMessages = [
+    { role: 'system', content: systemPrompt },
+    ...chatMessages.value.map(msg => ({ role: msg.role, content: msg.content }))
+  ];
+
+  const assistantMessagePlaceholder = { role: 'assistant', content: '', id: messageIdCounter++ };
+  chatMessages.value.push(assistantMessagePlaceholder);
+  const assistantMessageIndex = chatMessages.value.length - 1;
+
+  try {
+    const stream = await openai.chat.completions.create({
+      model: AI_MODEL,
+      messages: apiMessages,
+      stream: true,
+      temperature: 0.8,
+    });
+
+    let fullResponse = '';
+    for await (const chunk of stream) {
+      const contentPart = chunk.choices[0]?.delta?.content || '';
+      if (contentPart) {
+          fullResponse += contentPart;
+          chatMessages.value[assistantMessageIndex].content = fullResponse;
+          scrollToBottom();
+      }
+    }
+    console.log("Successfully streamed chat response.");
+
+  } catch (error) {
+    console.error('Error fetching chat completion:', error);
+    chatError.value = `${t('aiChatError')}: ${error.message || 'Unknown error'}`;
+    chatMessages.value[assistantMessageIndex].content = `⚠️ ${chatError.value}`;
+    scrollToBottom();
+  } finally {
+    isChatLoading.value = false;
+  }
+};
+
+
+// --- Other State & Logic ---
 const isMobileNavOpen = ref(false);
-
-// --- State Adjustments (Make them computed based on language) ---
-
-// Define sidebar navigation items using computed
 const navItems = computed(() => [
-  // Main Section
   { title: t('search'), icon: '🔍', link: '#search-section', internal: true, section: 'main' },
+  { title: t('dailySuggestion'), icon: '💡', link: '#daily-suggestion-section', internal: true, section: 'main' },
   { title: t('navGrid'), icon: '🌐', link: '#nav-section', internal: true, section: 'main' },
   { title: t('aiChat'), icon: '💬', link: '#chat-section', internal: true, section: 'main' },
   { title: t('hotSearch'), icon: '🔥', link: '#hotsearch-section', internal: true, section: 'main' },
-  // Extras Section
   { title: t('blog'), icon: '✍️', link: '/blog', internal: false, section: 'extras' },
   { title: t('loveSpace'), icon: '💖', link: '/love', internal: true, section: 'extras' },
   { title: t('news'), icon: '📰', link: '#news-section', internal: true, section: 'extras' },
-  // User Section
   { title: t('sponsor'), icon: '💰', link: '#', internal: true, click: () => { showSponsor.value = true }, section: 'user' }
 ]);
-
-// Define links for the main content navigation grid
-// Note: Translating external site names might be optional
 const navLinks = computed(() => [
     { name: t('navLinkBilibili'), url: 'https://www.bilibili.com' },
     { name: t('navLinkAliyun'), url: 'https://ecs.console.aliyun.com/' },
     { name: t('navLinkYuketang'), url: 'https://www.yuketang.cn/v2/web/index' },
     { name: t('navLinkDeepseek'), url: 'https://chat.deepseek.com/' },
     { name: t('navLinkMoji'), url: 'https://www.mojidict.com/' },
+    { name: 'Gemini', url: 'https://deepmind.google/technologies/gemini/pro/' },
+    { name: t('navLinkShixiseng'), url: 'https://www.shixiseng.com/' },
+    { name: 'BOOTH', url: 'https://booth.pm/' },
+    { name: '小林coding', url: 'https://xiaolincoding.com/' },
+    { name: 'Jetpack Compose教程', url: 'https://jetpackcompose.cn/docs/' },
+
+
 ]);
-
-
-// --- Search Engine Config (Make names computed) ---
 const engines = computed(() => [
   { name: t('engineBing'), value: 'bing', url: 'https://www.bing.com/search?q=' },
   { name: t('engineBaidu'), value: 'baidu', url: 'https://www.baidu.com/s?wd=' },
   { name: t('engineSogou'), value: 'sogou', url: 'https://www.sogou.com/web?query=' }
 ]);
-// selectedEngine needs to be managed carefully if engines array changes structure
-// Simplest: keep track of the *value* and find the corresponding object
 const selectedEngineValue = ref(engines.value[0].value);
 const selectedEngine = computed(() => engines.value.find(e => e.value === selectedEngineValue.value) || engines.value[0]);
-
 const searchQuery = ref('');
-
-// --- Other State ---
 const showSponsor = ref(false);
-const hotSearchList = ref(['Vue 3', 'Tailwind CSS', '天气 API', 'DeepSeek', '大模型', '备案流程', 'JavaScript']); // Hot search terms usually aren't translated
+const hotSearchList = ref(['Vue 3', 'Tailwind CSS', '天气 API', 'DeepSeek', '大模型', '备案流程', 'JavaScript']);
 const currentYear = new Date().getFullYear();
-// const weatherInfo = ref("☀️ 晴朗 25°C"); // Weather might need a more complex solution or API that supports language
-const calendarInfo = ref(new Date().toLocaleDateString(currentLanguage.value)); // Use current lang for initial format
-const newsHeadlines = ref([ // Example static news - better fetched from an API
+const calendarInfo = ref(new Date().toLocaleDateString(currentLanguage.value));
+const newsHeadlines = ref([
     { id: 1, titleKey: "news1Title", title: "科技巨头发布新款 AI 芯片" },
     { id: 2, titleKey: "news2Title", title: "国内新能源汽车销量再创新高" },
     { id: 3, titleKey: "news3Title", title: "某地探索数字人民币应用新场景" },
 ]);
-// Add dummy translations for news placeholders in locales.js if needed
-// Example in locales.js:
-// 'zh-CN': { ..., news1Title: "科技巨头发布新款 AI 芯片", ... }
-// 'en-US': { ..., news1Title: "Tech Giant Releases New AI Chip", ... }
-// 'ja-JP': { ..., news1Title: "大手テック企業が新しいAIチップを発表", ... }
-
-
-// --- Typewriter State & Logic (Use computed for quotes) ---
 const quotes = computed(() => [
   t('quote1'), t('quote2'), t('quote3'), t('quote4'), t('quote5'), t('quote6')
 ]);
@@ -284,26 +414,18 @@ const pauseBetweenQuotes = 2000;
 let typingInterval = null;
 let charIndex = 0;
 let isDeleting = false;
-
-// --- Mobile Nav Methods ---
 const toggleMobileNav = () => { isMobileNavOpen.value = !isMobileNavOpen.value; };
-const closeMobileNav = () => { if (isMobileNavOpen.value) { isMobileNavOpen.value = false; } }
-
+const closeMobileNav = () => { if (isMobileNavOpen.value) { isMobileNavOpen.value = false; } };
 const typeWriterEffect = () => {
-      // Use the computed quotes array
       const currentQuoteArray = quotes.value;
       const currentQuote = currentQuoteArray[currentQuoteIndex.value];
       if (!currentQuote) return;
-
       clearTimeout(typingInterval);
-
       if (isDeleting) {
         displayedTitle.value = currentQuote.substring(0, charIndex - 1);
         charIndex--;
         if (charIndex <= 0) {
-          isDeleting = false;
-          charIndex = 0;
-          currentQuoteIndex.value = (currentQuoteIndex.value + 1) % currentQuoteArray.length;
+          isDeleting = false; charIndex = 0; currentQuoteIndex.value = (currentQuoteIndex.value + 1) % currentQuoteArray.length;
           typingInterval = setTimeout(typeWriterEffect, typingSpeed);
         } else {
           typingInterval = setTimeout(typeWriterEffect, typingSpeed / 2);
@@ -312,51 +434,45 @@ const typeWriterEffect = () => {
         displayedTitle.value = currentQuote.substring(0, charIndex + 1);
         charIndex++;
         if (charIndex >= currentQuote.length) {
-          isDeleting = true;
-          typingInterval = setTimeout(typeWriterEffect, pauseBetweenQuotes);
+          isDeleting = true; typingInterval = setTimeout(typeWriterEffect, pauseBetweenQuotes);
         } else {
           typingInterval = setTimeout(typeWriterEffect, typingSpeed);
         }
       }
 };
-
-
-// --- Methods ---
 const performSearch = () => {
   if (searchQuery.value.trim()) {
     window.open(selectedEngine.value.url + encodeURIComponent(searchQuery.value), '_blank');
   }
 };
-
 const groupedNavItems = computed(() => {
   const groups = { main: [], extras: [], user: [] };
-  // Use the computed navItems which already have translated titles
   navItems.value.forEach(item => {
-    if (groups[item.section]) {
-      groups[item.section].push(item);
-    } else {
-      groups.main.push(item); // Default group
-    }
+    if (groups[item.section]) groups[item.section].push(item);
+    else groups.main.push(item);
   });
   return groups;
 });
-
-
+const handleClick = (event, clickHandler) => {
+  if (clickHandler && typeof clickHandler === 'function') {
+    event.preventDefault(); clickHandler();
+  }
+   closeMobileNav();
+};
+const determineTarget = (item) => {
+  if (item.link.startsWith('http')) return '_blank';
+  if (item.internal === false && item.link.startsWith('/')) return '_self';
+  return '_self';
+};
 
 // --- Lifecycle Hooks ---
 onMounted(() => {
   calendarInfo.value = new Date().toLocaleDateString(currentLanguage.value);
-
-  // Request location and subsequently weather
+  loadChatHistory();
+  loadDailySuggestion();
   requestLocationAndWeather();
-
-  // Start typewriter regardless of weather outcome, but ensure it's cleared/reset properly
   console.log("启动打字机效果...");
   clearTimeout(typingInterval);
-  currentQuoteIndex.value = 0;
-  charIndex = 0;
-  isDeleting = false;
-  displayedTitle.value = '';
   typeWriterEffect();
 });
 
@@ -365,151 +481,120 @@ onBeforeUnmount(() => {
   clearTimeout(typingInterval);
 });
 
-
-const handleClick = (event, clickHandler) => {
-  if (clickHandler && typeof clickHandler === 'function') {
-    event.preventDefault();
-    clickHandler();
-  }
-   closeMobileNav(); // Close nav on any item click
-}
-
-const determineTarget = (item) => {
-  if (item.link.startsWith('http')) return '_blank';
-  if (item.internal === false && item.link.startsWith('/')) return '_self';
-  return '_self';
-}
-
 </script>
 
 <template>
+  <!-- 这个 <template> 部分保持不变 (包含 AI 功能的 HTML 结构) -->
   <div class="page-container" :class="{ 'mobile-nav-active': isMobileNavOpen }">
-    <!-- Overlay -->
     <div v-if="isMobileNavOpen" class="mobile-nav-overlay" @click="closeMobileNav"></div>
-
-    <!-- Sidebar -->
     <aside class="sidebar" :class="{ 'mobile-open': isMobileNavOpen }">
-      <div class="sidebar-header">
-        <img src="/img/avatar.jpg" alt="头像" class="sidebar-avatar">
-        <span class="logo">玺朽</span>
-        <button class="mobile-close-btn" @click="closeMobileNav">×</button>
-      </div>
-      <nav class="sidebar-nav">
-        <!-- Main Section -->
-        <ul class="nav-group">
-           <li v-for="(item, index) in groupedNavItems.main" :key="'main-'+item.link+'-'+index" :class="{ active: false }">
-             <router-link v-if="item.internal && item.link.startsWith('/')" :to="item.link" @click="closeMobileNav">
-                <span class="nav-icon">{{ item.icon }}</span>
-                <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
-             </router-link>
-              <a v-else :href="item.link" @click="handleClick($event, item.click)" :target="determineTarget(item)">
-               <span class="nav-icon">{{ item.icon }}</span>
-               <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
-             </a>
-           </li>
-        </ul>
-        <div class="nav-separator"></div>
-         <!-- Extras Section -->
-         <ul class="nav-group">
-          <li v-for="(item, index) in groupedNavItems.extras" :key="'extras-'+item.link+'-'+index" :class="{ active: false }">
-            <router-link v-if="item.internal === true && item.link.startsWith('/')" :to="item.link" @click="closeMobileNav">
-              <span class="nav-icon">{{ item.icon }}</span>
-              <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
-            </router-link>
-            <a v-else :href="item.link" @click="handleClick($event, item.click)" :target="determineTarget(item)">
-              <span class="nav-icon">{{ item.icon }}</span>
-              <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
-            </a>
-         </li>
-         </ul>
-         <div class="nav-separator"></div>
-         <!-- User Section -->
-         <ul class="nav-group">
-         <li v-for="(item, index) in groupedNavItems.user" :key="'user-'+item.link+'-'+index" :class="{ active: false }">
-             <a :href="item.link"
-                @click="handleClick($event, item.click)"
-                :target="determineTarget(item)">
-               <span class="nav-icon">{{ item.icon }}</span>
-               <span class="nav-text">{{ item.title }}</span> <!-- Title is now computed -->
-             </a>
-         </li>
-         </ul>
-      </nav>
-      <div class="sidebar-footer">
-        v1.0.3 <!-- Version bump -->
-      </div>
+        <div class="sidebar-header">
+          <img src="/img/avatar.jpg" alt="头像" class="sidebar-avatar">
+          <span class="logo">玺朽</span>
+          <button class="mobile-close-btn" @click="closeMobileNav">×</button>
+        </div>
+         <nav class="sidebar-nav">
+           <!-- Main Section -->
+           <ul class="nav-group">
+              <li v-for="(item, index) in groupedNavItems.main" :key="'main-'+item.link+'-'+index" :class="{ active: false }">
+                 <router-link v-if="item.internal && item.link.startsWith('/') && item.link !== '/'" :to="item.link" @click="closeMobileNav">
+                    <span class="nav-icon">{{ item.icon }}</span>
+                    <span class="nav-text">{{ item.title }}</span>
+                 </router-link>
+                 <a v-else :href="item.link" @click="handleClick($event, item.click)" :target="determineTarget(item)">
+                   <span class="nav-icon">{{ item.icon }}</span>
+                   <span class="nav-text">{{ item.title }}</span>
+                 </a>
+              </li>
+           </ul>
+           <div class="nav-separator"></div>
+            <!-- Extras Section -->
+             <ul class="nav-group">
+              <li v-for="(item, index) in groupedNavItems.extras" :key="'extras-'+item.link+'-'+index" :class="{ active: false }">
+                <router-link v-if="item.internal === true && item.link.startsWith('/')" :to="item.link" @click="closeMobileNav">
+                  <span class="nav-icon">{{ item.icon }}</span>
+                  <span class="nav-text">{{ item.title }}</span>
+                </router-link>
+                <a v-else :href="item.link" @click="handleClick($event, item.click)" :target="determineTarget(item)">
+                  <span class="nav-icon">{{ item.icon }}</span>
+                  <span class="nav-text">{{ item.title }}</span>
+                </a>
+             </li>
+             </ul>
+             <div class="nav-separator"></div>
+             <!-- User Section -->
+             <ul class="nav-group">
+             <li v-for="(item, index) in groupedNavItems.user" :key="'user-'+item.link+'-'+index" :class="{ active: false }">
+                 <a :href="item.link"
+                    @click="handleClick($event, item.click)"
+                    :target="determineTarget(item)">
+                   <span class="nav-icon">{{ item.icon }}</span>
+                   <span class="nav-text">{{ item.title }}</span>
+                 </a>
+             </li>
+             </ul>
+         </nav>
+         <div class="sidebar-footer">
+            v1.10 2025-4-20 今日指南和AI聊天<!-- Update version if needed -->
+         </div>
     </aside>
 
-    <!-- Main Content Area -->
     <main class="main-content">
-      <!-- Top Bar -->
        <header class="top-bar">
             <div class="top-bar-left">
                 <button class="mobile-nav-toggle" @click="toggleMobileNav">
                  <span></span><span></span><span></span>
                </button>
-               <!-- Use t() for top bar items -->
                <span class="top-bar-item desktop-only">{{ t('appCenter') }}</span>
                <span class="top-bar-item desktop-only">{{ t('abilityTest') }}</span>
                <span class="top-bar-item desktop-only">{{ t('webPlugin') }}</span>
             </div>
             <div class="top-bar-right">
                <span class="top-bar-item calendar-widget">
-                 📅 {{ calendarInfo }} <!-- Calendar format updates automatically -->
+                 📅 {{ calendarInfo }}
+               </span>
+               <span class="top-bar-item weather-widget"> <!-- Use weather-widget class -->
+                  <!-- Show detailed weather IF rawWeatherData is available -->
+                  <template v-if="rawWeatherData">
+                      <span class="weather-icon">{{ getWeatherIcon(rawWeatherData.weather) }}</span>
+                      <span class="weather-city mobile-hidden">{{ rawWeatherData.city }}:</span> <!-- Hide city on mobile if needed -->
+                      <span class="weather-condition">{{ rawWeatherData.weather }}</span>
+                      <span class="weather-temp">{{ rawWeatherData.temperature_float }}{{ t('weatherTempUnit') }}</span>
+                      <!-- Optional: Hide details on mobile -->
+                      <span class="separator mobile-hidden">|</span>
+                      <span class="weather-detail mobile-hidden">{{ t('weatherWindDirection') }}: {{ rawWeatherData.winddirection }}</span>
+                      <span class="separator mobile-hidden">|</span>
+                      <span class="weather-detail mobile-hidden">{{ t('weatherWind') }}: {{ rawWeatherData.windpower }} {{ t('weatherWindPowerUnit') }}</span>
+                      <span class="separator mobile-hidden">|</span>
+                      <span class="weather-detail mobile-hidden">{{ t('weatherHumidity') }}: {{ rawWeatherData.humidity_float }}%</span>
+                  </template>
+                   <!-- Otherwise, show the current status/error message -->
+                  <template v-else>
+                      <span class="weather-loading-error">{{ weatherInfo }}</span>
+                  </template>
                </span>
                <span class="top-bar-item desktop-only">{{ t('checkIn') }}</span>
                <span class="top-bar-item buy-item">{{ t('buyPro') }}</span>
             </div>
       </header>
-  <!-- Weather Display Container -->
-  <div class="weather-display-container">
-          <!-- Show detailed weather IF rawWeatherData is available -->
-          <div v-if="rawWeatherData" class="weather-content">
-              <span class="weather-icon">{{ getWeatherIcon(rawWeatherData.weather) }}</span>
-              <span class="weather-city">{{ rawWeatherData.city }}:</span>
-              <span class="weather-condition">{{ rawWeatherData.weather }}</span>
-              <span class="weather-temp">{{ rawWeatherData.temperature_float }}{{ t('weatherTempUnit') }}</span>
-              <span class="separator mobile-hidden">|</span>
-              <span class="weather-detail">{{ t('weatherWindDirection') }}: {{ rawWeatherData.winddirection }}</span>
-              <span class="separator mobile-hidden">|</span>
-              <span class="weather-detail">{{ t('weatherWind') }}: {{ rawWeatherData.windpower }} {{ t('weatherWindPowerUnit') }}</span>
-               <span class="separator mobile-hidden">|</span>
-              <span class="weather-detail">{{ t('weatherHumidity') }}: {{ rawWeatherData.humidity_float }}%</span>
-          </div>
-          <!-- Otherwise, show the current status/error message -->
-          <div v-else class="weather-loading-error">
-              {{ weatherInfo }}
-          </div>
-      </div>
-      <!-- ======================================== -->
+      <!-- Weather Display Container removed as it's integrated into top-bar now -->
 
-      <!-- Content Body -->
       <div class="content-body">
-        <!-- Title with Typewriter Effect -->
         <h1 class="main-title">
           {{ displayedTitle }}<span class="cursor">|</span>
         </h1>
 
-        <!-- Search Section -->
         <section id="search-section" class="content-section search-section">
-            <div class="search-box">
-                <span class="search-icon">🔍</span>
-                 <!-- Use computed engines -->
+              <div class="search-box">
+                 <span class="search-icon">🔍</span>
                  <select v-model="selectedEngineValue" class="search-select">
                     <option v-for="engine in engines" :key="engine.value" :value="engine.value">
-                      {{ engine.name }} <!-- Name is now computed -->
+                      {{ engine.name }}
                     </option>
                   </select>
-                <input
-                  type="text"
-                  v-model="searchQuery"
-                  :placeholder="t('searchPlaceholder')"
-                  @keyup.enter="performSearch"
-                  class="search-input"
-                />
+                <input type="text" v-model="searchQuery" :placeholder="t('searchPlaceholder')" @keyup.enter="performSearch" class="search-input" />
                 <button @click="performSearch" class="search-button">{{ t('searchButton') }}</button>
               </div>
-               <!-- Language Switcher -->
                <div class="language-switch">
                  {{ t('languageSwitch') }}:
                  <a href="#" @click.prevent="changeLanguage('zh-CN')" :class="{ active: currentLanguage === 'zh-CN' }">简体中文</a> |
@@ -518,39 +603,89 @@ const determineTarget = (item) => {
                </div>
         </section>
 
+        <!-- Daily Suggestion Section -->
+        <section id="daily-suggestion-section" class="content-section daily-suggestion-section">
+          <h2 class="section-title">{{ t('dailySuggestionTitle') }}</h2>
+          <div v-if="isSuggestionLoading" class="loading-indicator">
+             {{ t('aiSuggestionLoading') }} <span class="spinner">⏳</span>
+          </div>
+          <div v-else-if="suggestionError" class="error-message ai-error">
+             ⚠️ {{ suggestionError }}
+          </div>
+          <!-- Apply suggestion-content class for potential future specific styling -->
+          <div v-else-if="dailySuggestionContent" class="suggestion-content">
+  <div v-html="renderMarkdown(dailySuggestionContent)"></div>
+</div>
+           <div v-else-if="!rawWeatherData && geolocationStatus !== 'error'" class="info-message">
+              {{ t('aiWaitingForWeather') }}
+           </div>
+           <div v-else-if="geolocationStatus === 'error' && !rawWeatherData" class="info-message">
+              {{ t('aiSuggestionWeatherError') }}
+           </div>
+           <div v-else class="info-message">
+              {{ t('aiSuggestionNotAvailable') }}
+           </div>
+        </section>
+
         <!-- Hot Search Section -->
         <section id="hotsearch-section" class="content-section hot-search-section">
            <h2 class="section-title">{{ t('hotSearchTitle') }}</h2>
-           <div class="hot-search-tags">
-             <!-- Hot search terms usually remain in their original language -->
+            <div class="hot-search-tags">
              <span v-for="(term, index) in hotSearchList" :key="index" class="hot-tag">
                {{ term }}
              </span>
            </div>
         </section>
 
-         <!-- Navigation Links Section -->
+        <!-- Navigation Links Section -->
         <section id="nav-section" class="content-section">
            <h2 class="section-title">{{ t('navGridTitle') }}</h2>
            <div class="nav-links-grid">
-               <!-- Use computed navLinks -->
                <a v-for="(link, index) in navLinks" :key="'grid-'+link.url+'-'+index" :href="link.url" target="_blank" class="nav-link-card">
-                   {{ link.name }} <!-- Name is now computed -->
+                   {{ link.name }}
                </a>
                <a href="#" class="nav-link-card add-link-card" @click.prevent>{{ t('addLink') }}</a>
            </div>
         </section>
 
-        <!-- AI Chat Placeholder Section -->
-        <section id="chat-section" class="content-section ai-chat-placeholder">
+        <section id="chat-section" class="content-section ai-chat-section">
           <h2 class="section-title">{{ t('aiChatTitle') }}</h2>
           <div class="chat-interface">
-            <div class="chat-messages">
-              <p>{{ t('aiGreeting') }}</p> <!-- Use t() -->
+            <!-- Chat Messages Area - *** Apply Bubble Structure Here *** -->
+            <div class="chat-messages" ref="chatMessagesContainer">
+              <!-- Replace the simple <div v-for> with p inside, with this structure -->
+              <div v-for="message in chatMessages" :key="message.id"
+                   class="chat-message-wrapper"
+                   :class="[`message-${message.role}`]">  <!-- Wrapper for alignment -->
+                   <div class="chat-message-bubble" :class="[`bubble-${message.role}`]"> <!-- The actual bubble -->
+                       <!-- Render Markdown content INSIDE the bubble -->
+                       <div v-html="renderMarkdown(message.content)"></div>
+                       <!-- Simple Loading indicator for last assistant message during streaming -->
+                       <span v-if="message.role === 'assistant' && isChatLoading && chatMessages[chatMessages.length - 1]?.id === message.id && !message.content.includes('⚠️')" class="typing-indicator">...</span>
+                   </div>
+              </div>
+              <!-- End of v-for loop -->
             </div>
+            <!-- End Chat Messages Area -->
+
+             <div v-if="chatError" class="error-message ai-error chat-error-display">
+                ⚠️ {{ chatError }}
+             </div>
+
             <div class="chat-input-area">
-              <input type="text" :placeholder="t('chatInputPlaceholder')" />
-              <button>{{ t('chatSendButton') }}</button> <!-- Use t() -->
+              <input
+                type="text"
+                v-model="chatInput"
+                :placeholder="t('chatInputPlaceholder')"
+                :disabled="isChatLoading || !openai"
+                @keyup.enter="sendChatMessage"
+              />
+              <button @click="sendChatMessage" :disabled="isChatLoading || !chatInput.trim() || !openai">
+                {{ isChatLoading ? t('chatSendingButton') : t('chatSendButton') }}
+              </button>
+            </div>
+             <div v-if="!openai" class="info-message ai-info">
+                {{ t('aiClientNotInitialized') }}
             </div>
           </div>
         </section>
@@ -558,19 +693,16 @@ const determineTarget = (item) => {
         <!-- News Feed Placeholder Section -->
         <section id="news-section" class="content-section news-feed-placeholder">
            <h2 class="section-title">{{ t('newsTitle') }} <a href="#" class="view-more">{{ t('viewMore') }}</a></h2>
-          <ul class="news-list">
-             <!-- Example for news titles if keys were added -->
+            <ul class="news-list">
              <li v-for="item in newsHeadlines" :key="item.id">
                <a href="#">{{ item.titleKey ? t(item.titleKey) : item.title }}</a>
              </li>
-          </ul>
+           </ul>
         </section>
 
       </div>
 
-       <!-- Footer -->
        <footer class="main-footer">
-          <!-- Use t() and pass year as replacement -->
           <span>{{ t('footerCopyright', { year: currentYear }) }}</span>
           <span class="separator mobile-hidden">|</span> <br class="desktop-hidden">
           <a href="#">{{ t('contactUs') }}</a>
@@ -582,8 +714,6 @@ const determineTarget = (item) => {
           {{ t('icpRecord') }}</a>
         </footer>
     </main>
-
-    <!-- Sponsor Modal -->
     <div class="sponsor-modal" v-if="showSponsor">
         <div class="modal-content">
          <p style="text-align: center; font-weight: bold;">{{ t('sponsorThanks') }}</p>
@@ -600,6 +730,7 @@ const determineTarget = (item) => {
 
 <style scoped>
 /* --- Add Style for Active Language Link --- */
+/* (This was in your original style, keep it) */
 .language-switch a {
   text-decoration: none;
   color: #007bff; /* Standard link blue */
@@ -617,8 +748,7 @@ const determineTarget = (item) => {
   cursor: default;
 }
 
-
-/* --- Keep ALL existing CSS from the previous correct version --- */
+/* --- Keep ALL OTHER base CSS from the **very first version** you provided --- */
 /* Basic Reset & Font */
 * {
   box-sizing: border-box;
@@ -655,25 +785,23 @@ html, body {
 }
 
 .sidebar-header {
-  padding: 0 15px; /* 稍微调整 padding 以适应头像 */
+  padding: 0 15px;
   text-align: center;
   border-bottom: 1px solid #e0e0e0;
   height: 60px;
   display: flex;
   align-items: center;
-  /* justify-content: center; <-- 从 center 改为 space-between 或 flex-start */
-  justify-content: flex-start; /* 让元素从左开始排列 */
-  gap: 10px; /* 在头像和 Logo 之间添加间距 */
+  justify-content: flex-start;
+  gap: 10px;
   flex-shrink: 0;
 }
 
-/* --- 新增头像样式 --- */
 .sidebar-avatar {
-  width: 80px; /* 头像宽度 */
-  height: 80px; /* 头像高度 */
-  border-radius: 50%; /* 圆形 */
-  object-fit: cover; /* 保证图片不变形 */
-  flex-shrink: 0; /* 防止头像被压缩 */
+  width: 40px;  /* Adjusted to likely original size */
+  height: 40px; /* Adjusted to likely original size */
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .logo {
@@ -816,7 +944,12 @@ html, body {
     background-color: #e9ecef;
     padding: 5px 10px;
     border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
 }
+.weather-widget .weather-icon { font-size: 1.2em; margin-right: 3px;} /* Slightly adjust icon margin */
 
 /* Content Body */
 .content-body {
@@ -926,16 +1059,6 @@ html, body {
 .add-link-card { color: #adb5bd; border-style: dashed; display: flex; align-items: center; justify-content: center; font-weight: normal; font-size: 1.8em; }
 .add-link-card:hover { color: #e63946; border-color: #e63946; border-style: dashed; }
 
-/* AI Chat Placeholder */
-.ai-chat-placeholder .chat-interface { border: 1px solid #e0e0e0; border-radius: 6px; height: 300px; display: flex; flex-direction: column; }
-.chat-messages { flex-grow: 1; padding: 15px; overflow-y: auto; background-color: #f8f9fa; }
-.chat-messages p { margin-bottom: 10px; font-size: 0.9em; line-height: 1.5; }
-.chat-input-area { display: flex; border-top: 1px solid #e0e0e0; padding: 10px; background-color: #fff; }
-.chat-input-area input { flex-grow: 1; border: 1px solid #ced4da; border-radius: 4px; padding: 8px 10px; margin-right: 10px; outline: none; }
-.chat-input-area input:focus { border-color: #e63946; box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.2); }
-.chat-input-area button { padding: 8px 15px; background: #e63946; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s ease; }
-.chat-input-area button:hover { background: #d62828; }
-
 /* News Feed Placeholder */
 .news-feed-placeholder .news-list { list-style: none; padding: 0; }
 .news-list li { padding: 8px 0; border-bottom: 1px dashed #eee; }
@@ -990,23 +1113,211 @@ html, body {
 .close-modal-button:hover { background: #5a6268; }
 
 
-.weather-widget {
-  font-size: 0.85em; /* Slightly smaller font maybe */
-  white-space: normal; /* Allow wrapping if needed */
-  /* Add any other specific styles */
-   max-width: 300px; /* Prevent it from getting too wide */
-   overflow: hidden;
-   text-overflow: ellipsis;
-   white-space: nowrap; /* Or allow wrapping: white-space: normal; */
-   text-align: right; /* Align text to the right */
+/* Styles for suggestion section elements (loading/error/info) */
+/* Keep these simple */
+.daily-suggestion-section .loading-indicator,
+.daily-suggestion-section .error-message,
+.daily-suggestion-section .info-message {
+  padding: 15px;
+  text-align: center;
+  color: #666;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border: 1px dashed #eee;
+  margin-top: 10px;
 }
-    /* Ensure the loading/error message style is reasonable */
-    .weather-loading-error {
-      color: #888;
-      padding: 5px 0; /* Match padding if needed */
-      font-style: italic; /* Optional: make it italic */
-    }
-/* Mobile Styles */
+.daily-suggestion-section .error-message {
+  color: #dc3545;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+}
+.daily-suggestion-section .spinner {
+  display: inline-block;
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+/* Basic style for rendered suggestion content */
+.suggestion-content {
+    line-height: 1.7;
+    color: #333;
+    margin-top: 10px;
+}
+/* Keep basic markdown element styles */
+.suggestion-content h3 { margin-top: 1.2em; margin-bottom: 0.6em; font-size: 1.1em; border-bottom: 1px solid #eee; padding-bottom: 0.3em;}
+.suggestion-content ul, .suggestion-content ol { margin-left: 20px; margin-bottom: 1em; }
+.suggestion-content li { margin-bottom: 0.4em; }
+.suggestion-content strong { color: #e63946; }
+.suggestion-content code { background-color: #f1f3f5; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em;}
+.suggestion-content pre { background-color: #f1f3f5; padding: 10px; border-radius: 4px; overflow-x: auto; margin-bottom: 1em;}
+
+/* General AI Info/Error styles (Keep simple) */
+.ai-info, .ai-error {
+    font-size: 0.85em;
+    color: #6c757d;
+    padding: 8px 15px;
+    margin-top: 5px;
+}
+.ai-error {
+    color: #dc3545;
+}
+/* Chat specific error display */
+.ai-chat-section .chat-error-display {
+    padding: 8px 15px;
+    font-size: 0.85em;
+    text-align: center;
+    margin: 5px 10px;
+    border-radius: 4px;
+}
+
+
+/* ================================================= */
+/* == RE-ADD/MERGE AI CHAT BUBBLE STYLES HERE == */
+/* ================================================= */
+
+/* --- UPDATED Styles for AI Chat Section (Bubble Style) --- */
+.ai-chat-section .chat-interface {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  min-height: 300px;
+  max-height: 60vh; /* Limit max height */
+  display: flex;
+  flex-direction: column;
+  background-color: #fff; /* White background for the whole interface */
+  /* Override original simple height if needed: */
+  /* height: auto; */ /* Or remove height constraint */
+}
+.ai-chat-section .chat-messages {
+  flex-grow: 1;
+  padding: 15px 10px; /* Add some horizontal padding */
+  overflow-y: auto;
+  background-color: #f8f9fa; /* Light grey for message area */
+  display: flex; /* Use flexbox for messages */
+  flex-direction: column; /* Stack messages vertically */
+  gap: 12px; /* Space between message bubbles */
+  /* Remove original simple p tag margin if it exists */
+  /* p { margin-bottom: 0; } */
+}
+/* Remove original p styling if needed */
+.ai-chat-section .chat-messages p { margin-bottom: 0; }
+
+.ai-chat-section .chat-message-wrapper {
+    display: flex;
+    max-width: 85%; /* Limit message width */
+    /* This replaces the need for simple p tags */
+}
+.ai-chat-section .message-user {
+    justify-content: flex-end; /* Align user messages to the right */
+    margin-left: auto; /* Push user messages to the right */
+}
+.ai-chat-section .message-assistant {
+    justify-content: flex-start; /* Align assistant messages to the left */
+    margin-right: auto; /* Push assistant messages to the left */
+}
+
+.ai-chat-section .chat-message-bubble {
+  padding: 10px 15px;
+  border-radius: 18px; /* Rounded bubbles */
+  line-height: 1.5;
+  word-wrap: break-word; /* Break long words */
+  font-size: 0.95em;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  /* This replaces the simple p tag styling */
+}
+/* Style Markdown elements inside bubbles */
+.ai-chat-section .chat-message-bubble p:last-child {
+    margin-bottom: 0; /* Remove bottom margin for last p in bubble */
+}
+.ai-chat-section .chat-message-bubble ul,
+.ai-chat-section .chat-message-bubble ol {
+    margin-left: 18px; /* Indent lists inside bubbles */
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+.ai-chat-section .chat-message-bubble code {
+    background-color: rgba(0, 0, 0, 0.05);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+.ai-chat-section .chat-message-bubble pre {
+    background-color: rgba(0, 0, 0, 0.05);
+    padding: 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 0.85em;
+}
+.ai-chat-section .bubble-user {
+  background-color: #e63946; /* Theme color for user */
+  color: #ffffff;
+  border-bottom-right-radius: 5px; /* Slightly different corner */
+}
+.ai-chat-section .bubble-assistant {
+  background-color: #e9ecef; /* Light grey for assistant */
+  color: #333;
+  border-bottom-left-radius: 5px; /* Slightly different corner */
+}
+/* Typing indicator inside assistant bubble */
+.ai-chat-section .typing-indicator {
+    display: inline-block;
+    margin-left: 5px;
+    font-weight: bold;
+    animation: typing-blink 1s infinite;
+}
+@keyframes typing-blink {
+    50% { opacity: 0.5; }
+}
+
+/* Update Input Area Styling */
+.ai-chat-section .chat-input-area {
+  display: flex;
+  border-top: 1px solid #e0e0e0;
+  padding: 12px; /* Slightly more padding */
+  background-color: #fff;
+}
+.ai-chat-section .chat-input-area input {
+  flex-grow: 1;
+  border: 1px solid #ced4da;
+  border-radius: 20px; /* Rounded input */
+  padding: 10px 15px; /* Adjusted padding */
+  margin-right: 10px;
+  outline: none;
+  font-size: 0.95em; /* Adjusted font size */
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.ai-chat-section .chat-input-area input:focus {
+  border-color: #e63946;
+  box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.15);
+}
+.ai-chat-section .chat-input-area input:disabled {
+    background-color: #f8f9fa;
+    cursor: not-allowed;
+}
+.ai-chat-section .chat-input-area button {
+  padding: 10px 20px; /* Adjusted padding */
+  background: #e63946;
+  color: white;
+  border: none;
+  border-radius: 20px; /* Rounded button */
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 0.95em; /* Adjusted font size */
+  white-space: nowrap;
+}
+.ai-chat-section .chat-input-area button:hover:not(:disabled) {
+  background: #d62828;
+}
+.ai-chat-section .chat-input-area button:disabled {
+  background-color: #fca5ab;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+
+/* Mobile Styles (Keep original mobile styles) */
 .mobile-nav-toggle { display: none; }
 .mobile-close-btn { display: none; }
 .mobile-nav-overlay { display: none; }
@@ -1014,11 +1325,10 @@ html, body {
 .desktop-only { display: inline-flex; }
 .mobile-hidden { display: inline; }
 
-/* Breakpoint */
+/* Breakpoint (Keep original breakpoint adjustments BUT add chat bubble adjustments) */
 @media (max-width: 768px) {
   .page-container { /* No change needed here */ }
 
-  /* Sidebar Mobile */
   .sidebar {
     position: fixed; left: -260px; top: 0; bottom: 0; height: 100%;
     z-index: 1001; width: 250px; transition: left 0.3s ease-in-out;
@@ -1026,77 +1336,94 @@ html, body {
   }
   .sidebar.mobile-open { left: 0; }
   .sidebar-header { justify-content: space-between; }
+  .sidebar-avatar { width: 35px; height: 35px; }
 
-  /* Mobile Nav Toggle (Hamburger) */
   .mobile-nav-toggle {
     display: flex; flex-direction: column; justify-content: space-around;
     width: 30px; height: 25px; background: transparent; border: none;
     cursor: pointer; padding: 0; margin-right: 15px; order: -1;
   }
   .mobile-nav-toggle span { width: 100%; height: 3px; background-color: #555; border-radius: 2px; transition: all 0.3s linear; }
+  /* ... hamburger animation ... */
   .page-container.mobile-nav-active .mobile-nav-toggle span:nth-child(1) { transform: rotate(45deg) translate(5px, 6px); }
   .page-container.mobile-nav-active .mobile-nav-toggle span:nth-child(2) { opacity: 0; }
   .page-container.mobile-nav-active .mobile-nav-toggle span:nth-child(3) { transform: rotate(-45deg) translate(5px, -6px); }
+
 
   .mobile-close-btn { display: block; background: none; border: none; font-size: 2em; color: #888; cursor: pointer; padding: 0 15px; }
 
   .mobile-nav-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 1000; display: block; }
   .page-container:not(.mobile-nav-active) .mobile-nav-overlay { display: none; }
 
-  /* Adjust Main Content */
   .main-content { width: 100%; margin-left: 0; }
 
-  /* Adjust Top Bar */
   .top-bar { padding: 0 15px; height: 50px; }
   .top-bar-left, .top-bar-right { gap: 10px; }
   .desktop-only { display: none; }
   .buy-item { padding: 4px 8px; font-size: 0.85em; }
   .weather-widget, .calendar-widget { font-size: 0.8em; padding: 4px 8px; }
 
-  /* Adjust Content Body */
+  .weather-widget .weather-city,
+  .weather-widget .separator, /* Hide separators on mobile */
+  .weather-widget .weather-detail {
+      display: none; /* Hide detailed weather parts on mobile */
+  }
+
   .content-body { padding: 15px; }
   .main-title { font-size: 1.6em; margin-bottom: 20px; min-height: 30px; }
   .cursor { bottom: 3px; }
   .content-section { padding: 15px; margin-bottom: 20px; }
   .section-title { font-size: 1.1em; margin-bottom: 15px; }
 
-  /* Adjust Search */
   .search-section .search-box { padding: 3px 8px 3px 10px; border-radius: 20px; max-width: none; }
   .search-section .search-input { padding: 8px; font-size: 0.9em; }
   .search-section .search-button { padding: 6px 15px; font-size: 0.85em; }
   .search-section .search-select { font-size: 0.85em; }
   .language-switch { font-size: 0.8em; margin-top: 15px; }
-   /* Make language links slightly larger tap target on mobile */
   .language-switch a { padding: 5px 2px; }
 
-  /* Adjust Nav Grid */
   .nav-links-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
   .nav-link-card { padding: 12px; font-size: 0.85em; }
   .add-link-card { font-size: 1.5em; }
 
-  /* Adjust Chat Placeholder */
-  .ai-chat-placeholder .chat-interface { height: 250px; }
-  .chat-input-area input { padding: 6px 8px; }
-  .chat-input-area button { padding: 6px 10px; }
+  /* Adjust Chat Bubble Styles on Mobile */
+   .ai-chat-section .chat-interface {
+        max-height: 55vh; /* Allow slightly more height on mobile */
+    }
+     .ai-chat-section .chat-messages {
+        padding: 10px 8px;
+        gap: 10px;
+    }
+    .ai-chat-section .chat-message-wrapper {
+        max-width: 90%; /* Allow slightly wider bubbles on mobile */
+    }
+     .ai-chat-section .chat-message-bubble {
+        padding: 8px 12px;
+        font-size: 0.9em; /* Slightly smaller font in bubbles */
+     }
+     .ai-chat-section .chat-input-area {
+        padding: 10px;
+     }
+     .ai-chat-section .chat-input-area input {
+        padding: 8px 12px;
+        font-size: 0.9em;
+     }
+      .ai-chat-section .chat-input-area button {
+        padding: 8px 15px;
+        font-size: 0.9em;
+     }
 
-  /* Adjust News Feed */
   .news-list li a { font-size: 0.9em; }
 
-  /* Adjust Footer */
   .main-footer { padding: 15px; font-size: 0.75em; line-height: 1.5; }
   .mobile-hidden { display: none; }
   .desktop-hidden { display: block; content: ''; margin: -0.5em 0; }
   .main-footer a img { height: 12px; }
 
-  /* Adjust Sponsor Modal */
    .modal-content { padding: 20px; gap: 15px;}
    .sponsor-qr-container { gap: 15px; }
    .sponsor-qr-container img { width: 150px; max-width: 40%; }
    .close-modal-button { padding: 8px 16px; }
-   .weather-widget {
-        font-size: 0.75em;
-        max-width: 150px; /* Adjust for smaller screens */
-    }
 }
 
 </style>

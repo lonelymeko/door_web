@@ -27,6 +27,9 @@ export default defineConfig({
          rewrite: (path) => path.replace(/^\/sohu-api/, ''),
          configure: (proxy, options) => { /* Optional: Add logging */ }
        }
+    },
+    hmr: {
+      overlay: false // 设置为 false
     }
   }
 })
