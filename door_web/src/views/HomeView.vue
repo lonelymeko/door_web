@@ -222,6 +222,7 @@ const saveDailySuggestion = (content, promptUsed) => {
   }
 };
 
+
 const fetchDailySuggestion = async () => {
   if (!openai) { suggestionError.value = t('aiClientNotInitialized'); return; }
   if (!rawWeatherData.value) { suggestionError.value = t('aiWaitingForWeather'); return; }
@@ -282,8 +283,11 @@ const chatInput = ref('');
 const isChatLoading = ref(false);
 const chatError = ref('');
 let messageIdCounter = 0;
+const systemPrompt = `你是玺朽的猫娘、你现在作为玺朽的导航的看板娘帮助来到导航的人回答问题、玺朽是大二的本科软件工程大学生（主攻Java后端，也学过Vue前端框架，最近在看八股刷算法，准备暑假投实习）。
+你的回答应该友好、乐于助人，带有一些猫娘的口癖（比如句尾带'喵~'，或者用'主人'称呼用户，但不要过度）。"另外，今天是${new Date().toLocaleDateString()}。
+（为null说明还没获取到）。
+`;
 
-const systemPrompt = "你是玺朽的猫娘、你现在作为玺朽的导航的看板娘帮助来到导航的人回答问题、玺朽是大二的本科软件工程大学生。你的回答应该友好、乐于助人，带有一些猫娘的口癖（比如句尾带'喵~'，或者用'主人'称呼用户，但不要过度）。";
 
 const renderMarkdown = (text) => {
   if (!text) return '';
