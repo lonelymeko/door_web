@@ -1,5 +1,4 @@
 <script setup>
-// --- 这个 <script setup> 部分保持不变 (包含 AI 功能逻辑) ---
 import { ref, computed, onMounted, onBeforeUnmount, getCurrentInstance, watch, nextTick } from 'vue'
 import { locales } from '/src/utils/locales.js'
 import OpenAI from 'openai';
@@ -13,11 +12,15 @@ const CHAT_HISTORY_STORAGE_KEY = 'aiChatHistory';
 const instance = getCurrentInstance();
 const WEATHER_API_KEY = instance?.appContext.config.globalProperties.WEATHER_API_KEY;
 const AI_API_KEY = instance?.appContext.config.globalProperties.AI_API_KEY;
+const AI_API_KEY_ASK = instance?.appContext.config.globalProperties.AI_API_KEY_ASK;
 const AI_API_URL = instance?.appContext.config.globalProperties.AI_API_URL;
+const AI_API_URL_ASK = instance?.appContext.config.globalProperties.AI_API_URL_ASK;
 const AI_MODEL = instance?.appContext.config.globalProperties.AI_MODEL;
+const AI_MODEL_ASK = instance?.appContext.config.globalProperties.AI_MODEL_ASK;
 
 // --- OpenAI Client Initialization ---
 let openai = null;
+let openai_ask = null;
 if (AI_API_KEY && AI_API_URL && AI_MODEL) {
   try {
       openai = new OpenAI({
@@ -31,6 +34,18 @@ if (AI_API_KEY && AI_API_URL && AI_MODEL) {
   }
 } else {
   console.error("AI API Key, URL, or Model is missing. AI features will be disabled.");
+}
+if(AI_API_KEY_ASK && AI_API_URL_ASK && AI_MODEL_ASK){
+  try {
+    openai_ask = new OpenAI({
+        apiKey: AI_API_KEY_ASK,
+        baseURL: AI_API_URL_ASK,
+        dangerouslyAllowBrowser: true,
+      });
+      console.log("OpenAI client initialized for Ask.");
+  } catch (error) {
+      console.error("Failed to initialize OpenAI client:", error);
+  }
 }
 
 // --- Language State ---
@@ -224,7 +239,7 @@ const saveDailySuggestion = (content, promptUsed) => {
 
 
 const fetchDailySuggestion = async () => {
-  if (!openai) { suggestionError.value = t('aiClientNotInitialized'); return; }
+  if (!openai_ask) { suggestionError.value = t('aiClientNotInitialized'); return; }
   if (!rawWeatherData.value) { suggestionError.value = t('aiWaitingForWeather'); return; }
   if (isSuggestionLoading.value) return;
 
@@ -237,8 +252,8 @@ const fetchDailySuggestion = async () => {
   suggestionPrompt.value = prompt;
 
   try {
-    const stream = await openai.chat.completions.create({
-      model: AI_MODEL,
+    const stream = await openai_ask.chat.completions.create({
+      model: AI_MODEL_ASK,
       messages: [{ role: 'user', content: prompt }],
       stream: true,
       temperature: 0.7,
