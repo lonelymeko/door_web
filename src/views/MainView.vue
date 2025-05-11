@@ -2,6 +2,7 @@
 //引入组件
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
+import Footer from './Footer.vue'
 import Search from '../components/Search.vue'
 import Suggestion from '../components/Suggestion.vue'
 import HotSearch from '../components/hotsearch.vue';
@@ -365,20 +366,8 @@ onBeforeUnmount(() => {
              </li>
            </ul>
         </section>
-
       </div>
-
-       <footer class="main-footer">
-          <span>{{ t('footerCopyright', { year: currentYear }) }}</span>
-          <span class="separator mobile-hidden">|</span> <br class="desktop-hidden">
-          <a href="#">{{ t('contactUs') }}</a>
-          <span class="separator">|</span>
-          <a href="#">{{ t('privacyPolicy') }}</a>
-          <span class="separator mobile-hidden">|</span> <br class="desktop-hidden">
-          <a href="https://beian.miit.gov.cn/" target="_blank">
-            <img src="/img/gongan.png" alt="备案图标" style="height: 14px; vertical-align: middle; margin-right: 5px;">
-          {{ t('icpRecord') }}</a>
-        </footer>
+      <Footer />
     </main>
     <div class="sponsor-modal" v-if="showSponsor">
         <div class="modal-content">
@@ -390,7 +379,6 @@ onBeforeUnmount(() => {
         <button @click="showSponsor = false" class="close-modal-button">{{ t('sponsorClose') }}</button>
       </div>
     </div>
-
   </div>
 </template>
 
