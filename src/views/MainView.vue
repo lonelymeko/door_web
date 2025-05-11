@@ -1,6 +1,6 @@
 <script setup >
 //引入组件
-import Sidebar from '../components/sidebar.vue';
+import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
 import Search from '../components/Search.vue'
 import Suggestion from '../components/Suggestion.vue'
