@@ -56,233 +56,6 @@ const changeLanguage = (lang) => {
   loadDailySuggestion();
 };
 
-// --- Weather State & Logic ---
-const weatherInfo = ref(t('weatherLoading'));
-const rawWeatherData = ref(null);
-const geolocationStatus = ref('idle');
-const geolocationError = ref('');
-const getWeatherIcon = (weatherCondition) => {
-    if (!weatherCondition) return '❓';
-    const condition = String(weatherCondition).toLowerCase();
-    if (condition.includes('雷阵雨')) return '⛈️';
-    if (condition.includes('雷')) return '⚡';
-    if (condition.includes('雨夹雪')) return '🌨️';
-    if (condition.includes('雪')) return '❄️';
-    if (condition.includes('雨')) return '🌧️';
-    if (condition.includes('阴')) return '☁️';
-    if (condition.includes('多云')) return '🌥️';
-    if (condition.includes('晴')) return '☀️';
-    if (condition.includes('雾') || condition.includes('霾')) return '🌫️';
-    if (condition.includes('风') || condition.includes('吹')) return '🌬️';
-    console.warn("未匹配的天气图标:", weatherCondition);
-    return '🌍';
-};
-const fetchAdcodeFromCoords = async (latitude, longitude) => {
-    if (!WEATHER_API_KEY) return null;
-    geolocationStatus.value = 'pending_regeo';
-    weatherInfo.value = t('weatherFetchingAdcode');
-    try {
-        const proxyRegeoUrl = `/proxy-regeo?output=json&location=${longitude},${latitude}&key=${WEATHER_API_KEY}&radius=1000&extensions=base`;
-        const response = await fetch(proxyRegeoUrl);
-        if (!response.ok) throw new Error(`Proxy Regeo request failed: ${response.status} ${response.statusText}`);
-        const data = await response.json();
-        if (data.status === '1' && data.regeocode) {
-            const adcode = data.regeocode.addressComponent?.adcode;
-            if (adcode) return adcode;
-            else throw new Error('Gaode Regeo success, but no Adcode found');
-        } else {
-            throw new Error(`Gaode Regeo API error: ${data.info || 'Unknown error'}`);
-        }
-    } catch (error) {
-        console.error('Failed to get Adcode:', error);
-        geolocationStatus.value = 'error';
-        geolocationError.value = t('weatherAdcodeError');
-        weatherInfo.value = geolocationError.value;
-        return null;
-    }
-};
-const fetchWeatherDataByAdcode = async (adcode) => {
-    if (!WEATHER_API_KEY || !adcode) return null;
-    weatherInfo.value = t('weatherLoading');
-    try {
-        const proxyWeatherUrl = `/proxy-weather?city=${adcode}&key=${WEATHER_API_KEY}`;
-        const response = await fetch(proxyWeatherUrl);
-        if (!response.ok) throw new Error(`Proxy Weather request failed: ${response.status} ${response.statusText}`);
-        const data = await response.json();
-        if (data.status === '1' && data.lives && data.lives.length > 0) {
-            rawWeatherData.value = data.lives[0];
-            geolocationStatus.value = 'success';
-            weatherInfo.value = '';
-            return data.lives[0];
-        } else {
-            throw new Error(`Gaode Weather API error: ${data.info || 'Unknown error'}`);
-        }
-    } catch (error) {
-        console.error('Failed to get weather data:', error);
-        geolocationStatus.value = 'error';
-        if (!geolocationError.value) geolocationError.value = t('weatherError');
-        weatherInfo.value = geolocationError.value;
-        rawWeatherData.value = null;
-        return null;
-    }
-};
-const requestLocationAndWeather = () => {
-    if (!('geolocation' in navigator)) {
-        geolocationStatus.value = 'error';
-        geolocationError.value = t('weatherGeolocationNotSupported');
-        weatherInfo.value = geolocationError.value;
-        return;
-    }
-    if (!WEATHER_API_KEY) {
-         geolocationStatus.value = 'error';
-         geolocationError.value = t('weatherApiKeyMissing');
-         weatherInfo.value = geolocationError.value;
-         return;
-    }
-    geolocationStatus.value = 'pending_permission';
-    weatherInfo.value = t('weatherRequestingPermission');
-    navigator.geolocation.getCurrentPosition(
-        async (position) => {
-            const { latitude, longitude } = position.coords;
-            const adcode = await fetchAdcodeFromCoords(latitude, longitude);
-            if (adcode) {
-                await fetchWeatherDataByAdcode(adcode);
-            }
-        },
-        (error) => {
-            console.error('Geolocation error:', error);
-            geolocationStatus.value = 'error';
-            switch (error.code) {
-                case error.PERMISSION_DENIED: geolocationError.value = t('weatherPermissionDenied'); break;
-                case error.POSITION_UNAVAILABLE: geolocationError.value = t('weatherPositionUnavailable'); break;
-                case error.TIMEOUT: geolocationError.value = t('weatherPositionTimeout'); break;
-                default: geolocationError.value = t('weatherPositionUnavailable'); break;
-            }
-            weatherInfo.value = geolocationError.value;
-        }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
-    );
-};
-
-// // --- Daily Suggestion State & Logic ---
-// const dailySuggestionContent = ref('');
-// const isSuggestionLoading = ref(false);
-// const suggestionError = ref('');
-// const suggestionPrompt = ref('');
-
-// const getTodayDateString = () => {
-//   const today = new Date();
-//   const year = today.getFullYear();
-//   const month = String(today.getMonth() + 1).padStart(2, '0');
-//   const day = String(today.getDate()).padStart(2, '0');
-//   return `${year}-${month}-${day}`;
-// };
-
-// const clearOldSuggestions = () => {
-//     const todayStr = getTodayDateString();
-//     try {
-//         const storedData = localStorage.getItem(DAILY_SUGGESTION_STORAGE_KEY);
-//         if (storedData) {
-//             const parsedData = JSON.parse(storedData);
-//             if (parsedData.date !== todayStr) {
-//                 localStorage.removeItem(DAILY_SUGGESTION_STORAGE_KEY);
-//                 console.log("Cleared outdated daily suggestion from localStorage.");
-//             }
-//         }
-//     } catch (e) {
-//         console.error("Error reading/clearing daily suggestion from localStorage:", e);
-//         localStorage.removeItem(DAILY_SUGGESTION_STORAGE_KEY);
-//     }
-// };
-
-// const loadDailySuggestion = () => {
-//   clearOldSuggestions();
-//   const todayStr = getTodayDateString();
-//   try {
-//     const storedData = localStorage.getItem(DAILY_SUGGESTION_STORAGE_KEY);
-//     if (storedData) {
-//       const parsedData = JSON.parse(storedData);
-//       if (parsedData.date === todayStr && parsedData.content) {
-//         dailySuggestionContent.value = parsedData.content;
-//         suggestionPrompt.value = parsedData.prompt || '';
-//         console.log("Loaded daily suggestion from localStorage for", todayStr);
-//         isSuggestionLoading.value = false;
-//         suggestionError.value = '';
-//         return true;
-//       }
-//     }
-//   } catch (e) {
-//     console.error("Error reading daily suggestion from localStorage:", e);
-//     localStorage.removeItem(DAILY_SUGGESTION_STORAGE_KEY);
-//   }
-//   dailySuggestionContent.value = '';
-//   return false;
-// };
-
-// const saveDailySuggestion = (content, promptUsed) => {
-//   const todayStr = getTodayDateString();
-//   const dataToStore = { date: todayStr, content: content, prompt: promptUsed };
-//   try {
-//     localStorage.setItem(DAILY_SUGGESTION_STORAGE_KEY, JSON.stringify(dataToStore));
-//     console.log("Saved daily suggestion to localStorage for", todayStr);
-//   } catch (e) {
-//     console.error("Error saving daily suggestion to localStorage:", e);
-//   }
-// };
-
-
-// const fetchDailySuggestion = async () => {
-//   if (!openai) { suggestionError.value = t('aiClientNotInitialized'); return; }
-//   if (!rawWeatherData.value) { suggestionError.value = t('aiWaitingForWeather'); return; }
-//   if (isSuggestionLoading.value) return;
-
-//   isSuggestionLoading.value = true;
-//   suggestionError.value = '';
-//   dailySuggestionContent.value = '';
-//   const todayStr = getTodayDateString();
-//   const weather = rawWeatherData.value;
-//   const prompt = `根据以下信息，为今天 (${todayStr}) 写出详细的出行建议、今日黄历概览（例如：宜、忌、冲、煞、吉神方位等，简洁说明即可）和生活指数（例如：穿衣指数、运动指数、洗车指数等）：\n地点: ${weather.city} (${weather.province})\n天气: ${weather.weather}\n温度: ${weather.temperature}°C\n风向: ${weather.winddirection}\n风力: ${weather.windpower} 级\n湿度: ${weather.humidity}%\n\n请以友好的、略带调侃的语气提供建议，并使用Markdown格式化输出，重点内容适当加粗或使用列表。`;
-//   suggestionPrompt.value = prompt;
-
-//   try {
-//     const stream = await openai.chat.completions.create({
-//       model: AI_MODEL,
-//       messages: [{ role: 'user', content: prompt }],
-//       stream: true,
-//       temperature: 0.7,
-//     });
-
-//     let fullContent = '';
-//     for await (const chunk of stream) {
-//       const contentPart = chunk.choices[0]?.delta?.content || '';
-//       if (contentPart) {
-//         fullContent += contentPart;
-//         dailySuggestionContent.value = fullContent;
-//       }
-//     }
-//     saveDailySuggestion(fullContent, prompt);
-//     console.log("Successfully fetched and streamed daily suggestion.");
-
-//   } catch (error) {
-//     console.error('Error fetching daily suggestion:', error);
-//     suggestionError.value = `${t('aiSuggestionError')}: ${error.message || 'Unknown error'}`;
-//   } finally {
-//     isSuggestionLoading.value = false;
-//   }
-// };
-
-// watch(rawWeatherData, (newData) => {
-//   if (newData) {
-//     console.log("Weather data updated, checking/fetching daily suggestion.");
-//     if (!loadDailySuggestion()) {
-//       fetchDailySuggestion();
-//     }
-//   } else {
-//     dailySuggestionContent.value = '';
-//     suggestionError.value = '';
-//     isSuggestionLoading.value = false;
-//   }
-// }, { immediate: false });
-
 // --- AI Chat State & Logic ---
 const chatMessagesContainer = ref(null);
 const chatMessages = ref([]);
@@ -372,7 +145,6 @@ const sendChatMessage = async () => {
 
 
 // --- Other State & Logic ---
-const isMobileNavOpen = ref(false);
 const navItems = computed(() => [
   { title: t('search'), icon: '🔍', link: '#search-section', internal: true, section: 'main' },
   { title: t('dailySuggestion'), icon: '💡', link: '#daily-suggestion-section', internal: true, section: 'main' },
@@ -425,7 +197,6 @@ const pauseBetweenQuotes = 2000;
 let typingInterval = null;
 let charIndex = 0;
 let isDeleting = false;
-const toggleMobileNav = () => { isMobileNavOpen.value = !isMobileNavOpen.value; };
 const closeMobileNav = () => { if (isMobileNavOpen.value) { isMobileNavOpen.value = false; } };
 const typeWriterEffect = () => {
       const currentQuoteArray = quotes.value;
@@ -481,7 +252,6 @@ onMounted(() => {
   calendarInfo.value = new Date().toLocaleDateString(currentLanguage.value);
   loadChatHistory();
   loadDailySuggestion();
-  requestLocationAndWeather();
   console.log("启动打字机效果...");
   clearTimeout(typingInterval);
   typeWriterEffect();
