@@ -48,7 +48,7 @@
 </template>
 
 <script setup>
-// 引入组件
+//引入组件
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
 import Footer from './Footer.vue'

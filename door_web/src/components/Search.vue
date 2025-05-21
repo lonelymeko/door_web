@@ -42,7 +42,8 @@ const props = defineProps({
 
 const emit = defineEmits(['change-language']);
 
-const selectedEngineValue = ref(props.engines[0].value);
+// const selectedEngineValue = ref(props.engines[0].value);
+const selectedEngineValue = null
 const searchQuery = ref('');
 
 const selectedEngine = computed(() => {
