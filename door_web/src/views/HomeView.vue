@@ -635,7 +635,8 @@ onBeforeUnmount(() => {
              </ul>
          </nav>
          <div class="sidebar-footer">
-            v1.2 2025-7-1 实时热搜和今日头条<!-- Update version if needed -->
+            v1.23 2025-7-1 实时热搜，今日头条，邮件系统 <br>
+            记得关注博客，不定期更新！
          </div>
     </aside>
 
