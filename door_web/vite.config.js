@@ -26,7 +26,19 @@ export default defineConfig({
          changeOrigin: true,
          rewrite: (path) => path.replace(/^\/sohu-api/, ''),
          configure: (proxy, options) => { /* Optional: Add logging */ }
-       }
+       },
+      // 新增 Bilibili 代理 https://api.bilibili.com/x/web-interface/wbi/search/square?limit=10 
+      '/api/bilibili': {
+        target: 'https://api.bilibili.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/bilibili/, '/x/web-interface/wbi')
+      },
+      // 新增 今日头条 代理 https://dabenshi.cn/other/api/hot.php?type=toutiaoHot
+      '/api/toutiao': {
+        target: 'https://dabenshi.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/toutiao/, '/other/api')
+      }
     },
     hmr: {
       overlay: false // 设置为 false

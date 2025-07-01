@@ -15,7 +15,7 @@
           {{ displayedTitle }}<span class="cursor">|</span>
         </h1>
         <Search 
-          :engines="engines" 
+          
           :current-language="currentLanguage"
           @change-language="changeLanguage"
         />
@@ -111,12 +111,19 @@ const handleClick = (event, clickHandler) => {
 
 // --- 生命周期钩子 ---
 onMounted(() => {
-  console.log("MainView mounted")
-})
+  calendarInfo.value = new Date().toLocaleDateString(currentLanguage.value);
+  loadChatHistory();
+  loadDailySuggestion();
+  requestLocationAndWeather();
+  console.log("启动打字机效果...");
+  clearTimeout(typingInterval);
+  typeWriterEffect();
+});
 
 onBeforeUnmount(() => {
-  console.log("MainView unmounted")
-})
+  console.log("组件即将卸载，清除打字机定时器。");
+  clearTimeout(typingInterval);
+});
 </script>
 
 <style scoped>

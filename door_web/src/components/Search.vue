@@ -6,7 +6,7 @@
         <option v-for="engine in engines" :key="engine.value" :value="engine.value">
           {{ engine.name }}
         </option>
-      </select>
+      </select> 
       <input
         type="text"
         v-model="searchQuery"
@@ -56,9 +56,7 @@ const performSearch = () => {
   }
 };
 
-const changeLanguage = (lang) => {
-  emit('change-language', lang);
-};
+
 
 const t = (key, replacements = {}) => {
   const lang = props.currentLanguage;
@@ -67,6 +65,12 @@ const t = (key, replacements = {}) => {
     translation = translation.replace(`{${repKey}}`, replacements[repKey]);
   });
   return translation;
+};
+const changeLanguage = (lang) => {
+  currentLanguage.value = lang;
+  console.log(`切换语言为：${lang}`);
+  calendarInfo.value = new Date().toLocaleDateString(lang);
+  loadDailySuggestion();
 };
 </script>
 

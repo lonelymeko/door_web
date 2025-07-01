@@ -377,6 +377,77 @@ const sendChatMessage = async () => {
     isChatLoading.value = false;
   }
 };
+// hotSearch 异步请求 get 访问 https://api.bilibili.com/x/web-interface/wbi/search/square?limit=10 得到结果
+const doHotSearch = async () => {
+  try {
+    const response = await fetch('/api/bilibili/search/square?limit=10');
+    
+    // 先打印原始响应文本
+    const rawText = await response.text();
+    console.log("Raw API Response:", rawText); // 查看是否是HTML
+    
+    // 如果不是JSON，抛出错误
+    if (!response.ok || !rawText.startsWith("{")) {
+      throw new Error(`Invalid response: ${rawText.substring(0, 100)}...`);
+    }
+    
+    // 如果是JSON再解析
+    const data = JSON.parse(rawText);
+    return data.data.trending.list.map(item => item.show_name || item.keyword);
+  } catch (error) {
+    console.error("获取热搜失败:", error);
+    return [];
+  }
+};
+
+// 今日头条 newsheadlines api 格式：    [{ index: 1 , title: "科技巨头发布新款 AI 芯片", url: "https:\/\/www.toutiao.com\/..."
+//  },...] url 需要解码
+// API:https://dabenshi.cn/other/api/hot.php?type=toutiaoHot
+const newsHead = ref(null);
+ const getToutiaoHot = async () => { 
+  try {
+    const response = await fetch('/api/toutiao/hot.php?type=toutiaoHot');
+    // const response = await fetch('https://dabenshi.cn/other/api/hot.php?type=toutiaoHot');
+    // 先打印原始响应文本
+    const rawText = await response.text();
+    console.log("Raw API Response:", rawText); // 查看是否是HTML
+    
+    // 如果不是JSON，抛出错误
+    if (!response.ok || !rawText.startsWith("{")) {
+      throw new Error(`Invalid response: ${rawText.substring(0, 100)}...`);
+    }
+   // 如果是JSON再解析
+    const data = JSON.parse(rawText);
+    console.log('今日头条数据:', data);
+    const messages = data.data.map(item => item);
+    // 取前20位数据并返回
+    newsHead.value = messages;
+    return messages.slice(0, 20);
+  } catch (error) {
+    console.error("获取今日头条热搜失败:", error);
+    return [];
+  }
+};
+// 获取更多今日头条热搜
+const viewMoreNews = async () => { 
+    try {
+        if (!newsHead.value) {
+            // 如果没有数据，先获取数据
+            await getToutiaoHot();
+            return;
+          }
+// 显示所有数据（或者可以按需加载更多）
+    newsHeadlines.value = [...newsHead.value];
+  } catch (error) {
+    console.error("获取今日头条热搜失败:", error);
+  }
+};
+  
+// 定义点击跳转函数
+const openBilibiliSearch = (term) => {
+  const url = `https://search.bilibili.com/all?keyword=${encodeURIComponent(term)}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
 
 
 // --- Other State & Logic ---
@@ -415,13 +486,13 @@ const selectedEngineValue = ref(engines.value[0].value);
 const selectedEngine = computed(() => engines.value.find(e => e.value === selectedEngineValue.value) || engines.value[0]);
 const searchQuery = ref('');
 const showSponsor = ref(false);
-const hotSearchList = ref(['Vue 3', 'Tailwind CSS', '天气 API', 'DeepSeek', '大模型', '备案流程', 'JavaScript']);
+const hotSearchList = ref(['do']);
 const currentYear = new Date().getFullYear();
 const calendarInfo = ref(new Date().toLocaleDateString(currentLanguage.value));
 const newsHeadlines = ref([
-    { id: 1, titleKey: "news1Title", title: "科技巨头发布新款 AI 芯片" },
-    { id: 2, titleKey: "news2Title", title: "国内新能源汽车销量再创新高" },
-    { id: 3, titleKey: "news3Title", title: "某地探索数字人民币应用新场景" },
+    { id: 1, title: "科技巨头发布新款 AI 芯片", url: "https://example.com/news1" },
+    { id: 2, title: "AI 模型在医疗诊断中取得突破", url: "https://example.com/news2" },
+    { id: 3, title: "AI 聊天机器人在社交网络中becoming popular", url: "https://example.com/news3" },
 ]);
 const quotes = computed(() => [
   t('quote1'), t('quote2'), t('quote3'), t('quote4'), t('quote5'), t('quote6')
@@ -493,6 +564,14 @@ onMounted(() => {
   console.log("启动打字机效果...");
   clearTimeout(typingInterval);
   typeWriterEffect();
+  doHotSearch().then(data => {
+    hotSearchList.value = data;
+    console.log("HotSearch 列表已加载。");
+  });
+  getToutiaoHot().then(data => { 
+    newsHeadlines.value = data;
+    console.log("今日头条已加载。");
+  });
 });
 
 onBeforeUnmount(() => {
@@ -554,7 +633,7 @@ onBeforeUnmount(() => {
              </ul>
          </nav>
          <div class="sidebar-footer">
-            v1.10 2025-4-20 今日指南和AI聊天<!-- Update version if needed -->
+            v1.2 2025-7-1 实时热搜和今日头条<!-- Update version if needed -->
          </div>
     </aside>
 
@@ -650,7 +729,8 @@ onBeforeUnmount(() => {
         <section id="hotsearch-section" class="content-section hot-search-section">
            <h2 class="section-title">{{ t('hotSearchTitle') }}</h2>
             <div class="hot-search-tags">
-             <span v-for="(term, index) in hotSearchList" :key="index" class="hot-tag">
+             <span v-for="(term, index) in hotSearchList" :key="index" class="hot-tag"
+             @click="openBilibiliSearch(term)">
                {{ term }}
              </span>
            </div>
@@ -711,10 +791,10 @@ onBeforeUnmount(() => {
 
         <!-- News Feed Placeholder Section -->
         <section id="news-section" class="content-section news-feed-placeholder">
-           <h2 class="section-title">{{ t('newsTitle') }} <a href="#" class="view-more">{{ t('viewMore') }}</a></h2>
+           <h2 class="section-title">{{ t('newsTitle') }} <button  class="view-more" @click="viewMoreNews">{{ t('viewMore') }}</button></h2>
             <ul class="news-list">
              <li v-for="item in newsHeadlines" :key="item.id">
-               <a href="#">{{ item.titleKey ? t(item.titleKey) : item.title }}</a>
+               <a :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.index + "." + item.title }}</a>
              </li>
            </ul>
         </section>
