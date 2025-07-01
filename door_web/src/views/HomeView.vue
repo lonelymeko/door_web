@@ -458,9 +458,11 @@ const navItems = computed(() => [
   { title: t('navGrid'), icon: '🌐', link: '#nav-section', internal: true, section: 'main' },
   { title: t('aiChat'), icon: '💬', link: '#chat-section', internal: true, section: 'main' },
   { title: t('hotSearch'), icon: '🔥', link: '#hotsearch-section', internal: true, section: 'main' },
+  { title: t('news'), icon: '📰', link: '#news-section', internal: true, section: 'main' },
   { title: t('blog'), icon: '✍️', link: '/blog', internal: false, section: 'extras' },
   { title: t('loveSpace'), icon: '💖', link: '/love', internal: true, section: 'extras' },
-  { title: t('news'), icon: '📰', link: '#news-section', internal: true, section: 'extras' },
+  { title: t('mail'), icon: '✉️', link: 'https://mail.lonelymeko.top/', internal: false, section: 'extras'},
+ 
   { title: t('sponsor'), icon: '💰', link: '#', internal: true, click: () => { showSponsor.value = true }, section: 'user' }
 ]);
 const navLinks = computed(() => [

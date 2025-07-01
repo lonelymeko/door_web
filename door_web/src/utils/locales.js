@@ -87,6 +87,7 @@ export const locales = {
       weatherAdcodeError: '无法解析位置。',
       weatherGeolocationNotSupported: '浏览器不支持地理位置', // New
       weatherApiKeyMissing: '天气服务配置错误', // New
+      mail: '邮件系统',
   },
 
   // --- English ---
@@ -176,7 +177,8 @@ export const locales = {
       weatherAdcodeError: 'Failed to resolve location.',
       weatherGeolocationNotSupported: 'Browser does not support geolocation', // New
       weatherApiKeyMissing: 'Weather service configuration error', // New
-  },
+      mail:'Mail System'
+  },    
 
   // --- Japanese (日本語) ---
   'ja-JP': {
@@ -264,6 +266,7 @@ export const locales = {
       weatherFetchingAdcode: '位置情報を解決しています...',
       weatherAdcodeError: '位置情報の解決に失敗しました。',
       weatherGeolocationNotSupported: 'ブラウザは地理位置情報をサポートしていません', // New
-      weatherApiKeyMissing: '天気サービスの設定エラー', // New
+      weatherApiKeyMissing: '天気サービスの設定エラー', // New\
+      mail: 'メールシステム',
   }
 };
