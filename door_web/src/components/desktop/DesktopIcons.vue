@@ -27,6 +27,8 @@ const renameInput = ref('');
 
 // Dragging State
 const isDragging = ref(false);
+const isMouseDown = ref(false); // 新增：标记鼠标是否按下
+const startMousePos = ref({ x: 0, y: 0 }); // 新增：记录按下时的鼠标位置
 const dragOffset = ref({ x: 0, y: 0 });
 const currentDragId = ref(null);
 const tempDragPosition = ref(null); // 新增：用于存储拖拽过程中的临时位置
@@ -74,32 +76,24 @@ const finishRename = () => {
 // Dragging Logic
 const startDrag = (e, icon) => {
   if (renamingId.value === icon.id) return; // Don't drag while renaming
-  if (isDragging.value) return; // Prevent multiple drags
+  if (isDragging.value || isMouseDown.value) return; // Prevent multiple drags
   
-  e.preventDefault(); // 防止浏览器默认的图片拖拽行为
-  e.stopPropagation();
+  // e.preventDefault(); // 移除：不要立即阻止默认行为，以免影响点击
+  // e.stopPropagation(); // 移除：不要阻止冒泡，以免影响其他逻辑
   
-  isDragging.value = true;
+  isMouseDown.value = true;
   currentDragId.value = icon.id;
-  emit('drag-start'); // 通知父组件开始拖拽
+  startMousePos.value = { x: e.clientX, y: e.clientY };
   
-  // Let's use the mouse position relative to the element
+  // Calculate offset immediately based on initial click
   const rect = e.currentTarget.getBoundingClientRect();
   const container = document.querySelector('.desktop-icons-container');
-  // Safety check for container
   if (!container) return;
   
-  const containerRect = container.getBoundingClientRect();
-
+  // Store initial offset
   dragOffset.value = {
     x: e.clientX - rect.left,
     y: e.clientY - rect.top
-  };
-  
-  // 初始化临时位置，确保开始拖拽时位置不跳变
-  tempDragPosition.value = {
-      x: rect.left - containerRect.left,
-      y: rect.top - containerRect.top
   };
   
   // Use document and capture phase to ensure we don't miss events
@@ -109,28 +103,47 @@ const startDrag = (e, icon) => {
 };
 
 const onDrag = (e) => {
-  if (!isDragging.value || !currentDragId.value) return;
+  if (!isMouseDown.value) return;
 
   // Safety check: if mouse button is not pressed, stop dragging
   if (e.buttons === 0) {
       stopDrag(e);
       return;
   }
+
+  // Check threshold to start dragging
+  if (!isDragging.value) {
+      const dx = e.clientX - startMousePos.value.x;
+      const dy = e.clientY - startMousePos.value.y;
+      // Only start dragging if moved more than 5 pixels
+      if (Math.sqrt(dx*dx + dy*dy) > 5) {
+          isDragging.value = true;
+          emit('drag-start');
+          
+          // Prevent default now that we are dragging
+          e.preventDefault();
+      } else {
+          return; // Ignore small movements (click/dblclick)
+      }
+  }
   
-  const container = document.querySelector('.desktop-icons-container');
-  if (container) {
-      const rect = container.getBoundingClientRect();
-      // 计算新的相对位置
-      const x = e.clientX - rect.left - dragOffset.value.x;
-      const y = e.clientY - rect.top - dragOffset.value.y;
-      
-      // 更新临时位置，触发视图更新
-      tempDragPosition.value = { x, y };
+  if (isDragging.value) {
+      e.preventDefault(); // Prevent selection/native drag during custom drag
+      const container = document.querySelector('.desktop-icons-container');
+      if (container) {
+          const rect = container.getBoundingClientRect();
+          // 计算新的相对位置
+          const x = e.clientX - rect.left - dragOffset.value.x;
+          const y = e.clientY - rect.top - dragOffset.value.y;
+          
+          // 更新临时位置，触发视图更新
+          tempDragPosition.value = { x, y };
+      }
   }
 };
 
 const stopDrag = (e) => {
-  // Remove listeners immediately to prevent further triggers
+  // Remove listeners immediately
   document.removeEventListener('mousemove', onDrag, { capture: true });
   document.removeEventListener('mouseup', stopDrag, { capture: true });
   window.removeEventListener('blur', stopDrag);
@@ -142,8 +155,6 @@ const stopDrag = (e) => {
         
         if (recycleBinEl) {
             const rbRect = recycleBinEl.getBoundingClientRect();
-            // Check if mouse is within recycle bin bounds
-            // Use e.clientX/Y if available, otherwise ignore (e.g. blur event)
             if (e && e.clientX !== undefined && 
                 e.clientX >= rbRect.left && e.clientX <= rbRect.right &&
                 e.clientY >= rbRect.top && e.clientY <= rbRect.bottom) {
@@ -152,27 +163,21 @@ const stopDrag = (e) => {
                 if (!currentDragId.value.startsWith('icon-')) { // Only delete user files
                      emit('delete-file', currentDragId.value);
                 }
-                // Return here, cleanup is in finally block (simulated)
-                // Actually we need to run the cleanup logic below.
-                // Let's just use a flag or restructure.
             } else {
                 // Normal drop - update position
                 const container = document.querySelector('.desktop-icons-container'); 
                 if (container) {
                     const rect = container.getBoundingClientRect();
-                    // Use last known position from tempDragPosition if event is missing coords (e.g. blur)
-                    // But tempDragPosition is relative.
-                    // Let's recalculate from event if possible.
                     let x, y;
                     if (e && e.clientX !== undefined) {
                         x = e.clientX - rect.left - dragOffset.value.x;
                         y = e.clientY - rect.top - dragOffset.value.y;
-                      } else if (tempDragPosition.value) {
+                    } else if (tempDragPosition.value) {
                         x = tempDragPosition.value.x;
                         y = tempDragPosition.value.y;
-                      }
-                      
-                      if (x !== undefined && y !== undefined) {
+                    }
+                    
+                    if (x !== undefined && y !== undefined) {
                         emit('update-position', currentDragId.value, x, y);
                       }
                 }
@@ -198,13 +203,14 @@ const stopDrag = (e) => {
     } catch (err) {
         console.error("Error in stopDrag:", err);
     }
+    emit('drag-end'); 
   }
   
   // Always reset state
   isDragging.value = false;
+  isMouseDown.value = false;
   currentDragId.value = null;
   tempDragPosition.value = null;
-  emit('drag-end'); 
 };
 
 onMounted(() => {
