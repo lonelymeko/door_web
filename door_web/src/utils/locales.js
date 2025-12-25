@@ -2,6 +2,7 @@
 export const locales = {
   // --- Simplified Chinese (简体中文) ---
   'zh-CN': {
+    navLinkVolcengine: '火山引擎',
       // Sidebar & General
       search: '搜索发现', // Slightly updated
       navGrid: '网站导航',
@@ -22,6 +23,7 @@ export const locales = {
       searchPlaceholder: '输入内容开始搜索...', // Updated
       searchButton: '搜索',
       languageSwitch: '语言切换', // Updated
+      recycleBin: '回收站', // Added
       // Daily Suggestion Section (New)
       dailySuggestionTitle: '💡 今日出行与生活指南',
       aiSuggestionLoading: '猫娘正在为你占卜今日运势...',
@@ -57,6 +59,7 @@ export const locales = {
       quote4: '保持好奇，永远学习。',
       quote5: '生活改变世界，学习改变生活。', // Keep as is
       quote6: '早安，打工人！今天也要努力搬砖喵~', // Added personality
+        //  quote1: '玺朽生日快乐！🎂',
       // Search Engines
       engineBing: '必应',
       engineBaidu: '百度',
@@ -92,6 +95,7 @@ export const locales = {
 
   // --- English ---
   'en-US': {
+    navLinkVolcengine: 'VolcEngine',
       // Sidebar & General
       search: 'Search',
       navGrid: 'Site Navigation',
@@ -147,6 +151,7 @@ export const locales = {
       quote4: 'Stay curious, always learn.',
       quote5: 'Life changes the world, learning changes life.',
       quote6: 'Good morning, worker! Gotta work hard today too, meow~', // Added personality
+    // quote1: 'A happy birthday to xixiu! 🎂',
       // Search Engines
       engineBing: 'Bing',
       engineBaidu: 'Baidu',
@@ -182,6 +187,7 @@ export const locales = {
 
   // --- Japanese (日本語) ---
   'ja-JP': {
+    navLinkVolcengine: 'ボルケンジン',
       // Sidebar & General
       search: '検索',
       navGrid: 'サイトナビ',
@@ -237,6 +243,7 @@ export const locales = {
       quote4: '好奇心を持ち、常に学び続ける。',
       quote5: '生活は世界を変え、学習は生活を変える。',
       quote6: 'おはよう、労働者さん！ 今日も一日頑張るにゃん～', // Added personality
+    // quote1: ' 今日は玺朽の誕生日なんです！🎂',
       // Search Engines
       engineBing: 'Bing',
       engineBaidu: '百度',

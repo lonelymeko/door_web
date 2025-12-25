@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '../views/HOMEView.vue'
+import HomeView from '../views/HomeView.vue'
 import LoveView from '../views/LoveView.vue'
 
 export default createRouter({
@@ -9,11 +9,6 @@ export default createRouter({
       path: '/',
       name: 'home',
       component: HomeView
-    },
-    {
-      path: '/love',
-      name: 'love',
-      component: LoveView
     }
   ]
 })

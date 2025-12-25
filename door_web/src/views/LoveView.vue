@@ -81,7 +81,7 @@ const checkAccess = () => {
 const currentImageIndex = ref(0);
 
 // 图片列表
-const images = Array.from({ length: 14 }, (_, i) => `/img/love${i}.png`);
+const images = Array.from({ length: 16 }, (_, i) => `/img/love${i}.png`);
 
 
 let interval = null;
