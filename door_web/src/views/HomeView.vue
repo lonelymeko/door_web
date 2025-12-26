@@ -485,7 +485,7 @@ onBeforeUnmount(() => {
           :openai="openai"
           :t="t"
           :renderMarkdown="renderMarkdown"
-          @send-message="sendChatMessage"
+          @send-message="(msg) => { chatInput = msg; sendChatMessage(); }"
         />
 
         <!-- Sponsor Content -->

@@ -1,13 +1,11 @@
 import { ref, nextTick, watch } from 'vue';
 import OpenAI from 'openai';
 import { marked } from 'marked';
-
+let openai = null;
 export function useAI(config, t) {
-  const { AI_API_KEY, AI_API_URL, AI_MODEL, AI_API_KEY_ASK, AI_API_URL_ASK, AI_MODEL_ASK } = config;
+  const { AI_API_KEY, AI_API_URL, AI_MODEL} = config;
 
   // --- OpenAI Client Initialization ---
-  let openai = null;
-  let openai_ask = null;
 
   if (AI_API_KEY && AI_API_URL && AI_MODEL) {
     try {
@@ -16,7 +14,6 @@ export function useAI(config, t) {
           baseURL: AI_API_URL,
           dangerouslyAllowBrowser: true,
         });
-        console.log("OpenAI client initialized for DeepSeek.");
     } catch (error) {
         console.error("Failed to initialize OpenAI client:", error);
     }
@@ -24,18 +21,6 @@ export function useAI(config, t) {
     console.error("AI API Key, URL, or Model is missing. AI features will be disabled.");
   }
 
-  if(AI_API_KEY_ASK && AI_API_URL_ASK && AI_MODEL_ASK){
-    try {
-      openai_ask = new OpenAI({
-          apiKey: AI_API_KEY_ASK,
-          baseURL: AI_API_URL_ASK,
-          dangerouslyAllowBrowser: true,
-        });
-        console.log("OpenAI client initialized for Ask.");
-    } catch (error) {
-        console.error("Failed to initialize OpenAI client:", error);
-    }
-  }
 
   // --- Daily Suggestion State & Logic ---
   const DAILY_SUGGESTION_STORAGE_KEY = 'dailyTravelSuggestion';
@@ -60,7 +45,6 @@ export function useAI(config, t) {
               const parsedData = JSON.parse(storedData);
               if (parsedData.date !== todayStr) {
                   localStorage.removeItem(DAILY_SUGGESTION_STORAGE_KEY);
-                  console.log("Cleared outdated daily suggestion from localStorage.");
               }
           }
       } catch (e) {
@@ -79,7 +63,6 @@ export function useAI(config, t) {
         if (parsedData.date === todayStr && parsedData.content) {
           dailySuggestionContent.value = parsedData.content;
           suggestionPrompt.value = parsedData.prompt || '';
-          console.log("Loaded daily suggestion from localStorage for", todayStr);
           isSuggestionLoading.value = false;
           suggestionError.value = '';
           return true;
@@ -98,14 +81,12 @@ export function useAI(config, t) {
     const dataToStore = { date: todayStr, content: content, prompt: promptUsed };
     try {
       localStorage.setItem(DAILY_SUGGESTION_STORAGE_KEY, JSON.stringify(dataToStore));
-      console.log("Saved daily suggestion to localStorage for", todayStr);
     } catch (e) {
       console.error("Error saving daily suggestion to localStorage:", e);
     }
   };
 
   const fetchDailySuggestion = async (rawWeatherData) => {
-    if (!openai_ask) { suggestionError.value = t('aiClientNotInitialized'); return; }
     if (!rawWeatherData) { suggestionError.value = t('aiWaitingForWeather'); return; }
     if (isSuggestionLoading.value) return;
 
@@ -118,8 +99,8 @@ export function useAI(config, t) {
     suggestionPrompt.value = prompt;
 
     try {
-      const stream = await openai_ask.chat.completions.create({
-        model: AI_MODEL_ASK,
+      const stream = await openai.chat.completions.create({
+        model: AI_MODEL,
         messages: [{ role: 'user', content: prompt }],
         stream: true,
         temperature: 0.7,
@@ -134,10 +115,10 @@ export function useAI(config, t) {
         }
       }
       saveDailySuggestion(fullContent, prompt);
-      console.log("Successfully fetched and streamed daily suggestion.");
 
     } catch (error) {
       console.error('Error fetching daily suggestion:', error);
+      console.error('Error details:', error.response ? error.response.data : error.message);
       suggestionError.value = `${t('aiSuggestionError')}: ${error.message || 'Unknown error'}`;
     } finally {
       isSuggestionLoading.value = false;
@@ -222,6 +203,7 @@ export function useAI(config, t) {
 
     } catch (error) {
       console.error('Error fetching chat completion:', error);
+      console.error('Error details:', error.response ? error.response.data : error.message);
       chatError.value = `${t('aiChatError')}: ${error.message || 'Unknown error'}`;
       chatMessages.value[assistantMessageIndex].content = `⚠️ ${chatError.value}`;
       scrollToBottom();
@@ -232,7 +214,6 @@ export function useAI(config, t) {
 
   return {
     openai,
-    openai_ask,
     dailySuggestionContent,
     isSuggestionLoading,
     suggestionError,
